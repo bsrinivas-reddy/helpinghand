@@ -7,7 +7,9 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "tsx src/test_all_endpoints.ts"
+    "test": "npm run test:isolated",
+    "test:isolated": "npm run build && node --experimental-test-module-mocks --test dist/tests/*.test.js",
+    "test:integration": "tsx src/test_all_endpoints.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -19,6 +21,7 @@
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.11.5",
     "redis": "^4.6.13",
+    "twilio": "^6.2.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

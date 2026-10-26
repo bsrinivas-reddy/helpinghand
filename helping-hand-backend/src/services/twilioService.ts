@@ -1,3 +1,4 @@
+import {verificationConfig} from '../utils/verificationConfig.js';
 import 'dotenv/config';
 
 export interface TwilioSmsParams {
@@ -11,6 +12,7 @@ export interface TwilioCallParams {
     role: 'worker' | 'employer';
     agreedWage: number;
     callbackBaseUrl?: string;
+    dispatchNonce: string;
 }
 
 const formatE164 = (phone: string): string => {
@@ -35,7 +37,7 @@ export const sendTwilioSms = async (params: TwilioSmsParams): Promise<{ success:
         if (process.env.NODE_ENV === 'production') {
             throw new Error('Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER) must be configured in production');
         }
-        console.log(`ℹ️ [Twilio SMS - Simulated] No Twilio credentials in environment. Simulating SMS to ${formattedTo}: "${params.body}"`);
+        console.log('SMS simulation used');
         return { success: true, simulated: true };
     }
 
@@ -49,6 +51,7 @@ export const sendTwilioSms = async (params: TwilioSmsParams): Promise<{ success:
     });
 
     const response = await fetch(endpoint, {
+        signal: AbortSignal.timeout(verificationConfig().providerTimeoutMs),
         method: 'POST',
         headers: {
             'Authorization': authHeader,
@@ -60,11 +63,11 @@ export const sendTwilioSms = async (params: TwilioSmsParams): Promise<{ success:
     const data = await response.json();
 
     if (!response.ok) {
-        console.error('❌ [Twilio SMS Error]:', data);
+        console.error('Telephony request rejected');
         throw new Error(`Twilio SMS delivery failed: ${data.message || response.statusText}`);
     }
 
-    console.log(`✅ [Twilio SMS Dispatched] SID: ${data.sid} to ${formattedTo}`);
+    console.log('SMS accepted by provider');
     return { success: true, sid: data.sid };
 };
 
@@ -75,10 +78,13 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-    const callbackBase = params.callbackBaseUrl || process.env.TWILIO_CALLBACK_BASE_URL || 'http://localhost:3000';
+    const callbackBase = params.callbackBaseUrl || process.env.TWILIO_CALLBACK_BASE_URL;
+    if (!callbackBase) throw new Error('Configured external HTTPS callback URL required');
+    const external=new URL(callbackBase);
+    if(external.protocol!=='https:'||external.pathname!=='/'||external.search||external.hash||external.username||external.password)throw new Error('Invalid external callback origin');
 
     const formattedTo = formatE164(params.to);
-    const callbackUrl = `${callbackBase}/api/${params.role}/shifts/${params.shiftId}/ivr-callback`;
+    const callbackUrl = `${new URL(callbackBase).origin}/api/${params.role}/shifts/${params.shiftId}/ivr-callback?dispatch=${params.dispatchNonce}`;
 
     // Construct accessible TwiML with Speech & DTMF Gather
     const promptText = params.role === 'worker'
@@ -87,7 +93,7 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Gather numDigits="1" action="${callbackUrl}" method="POST" timeout="10">
+    <Gather numDigits="1" action="${callbackUrl.replaceAll('&', '&amp;')}" method="POST" timeout="10">
         <Say voice="Polly.Aditi" language="en-IN">${promptText}</Say>
     </Gather>
     <Say voice="Polly.Aditi" language="en-IN">We did not receive any keypress. This shift remains pending verification. Goodbye.</Say>
@@ -97,9 +103,7 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
         if (process.env.NODE_ENV === 'production') {
             throw new Error('Twilio Voice credentials must be configured in production environment');
         }
-        console.log(`ℹ️ [Twilio Voice - Simulated] Initiating virtual call to ${formattedTo} for Shift ${params.shiftId} (${params.role})`);
-        console.log(`   Prompt: "${promptText}"`);
-        console.log(`   Callback Webhook URL: ${callbackUrl}`);
+        console.log('Voice simulation used');
         return { success: true, simulated: true };
     }
 
@@ -113,6 +117,7 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
     });
 
     const response = await fetch(endpoint, {
+        signal: AbortSignal.timeout(verificationConfig().providerTimeoutMs),
         method: 'POST',
         headers: {
             'Authorization': authHeader,
@@ -124,10 +129,10 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
     const data = await response.json();
 
     if (!response.ok) {
-        console.error('❌ [Twilio Voice Error]:', data);
+        console.error('Telephony request rejected');
         throw new Error(`Twilio Voice call failed: ${data.message || response.statusText}`);
     }
 
-    console.log(`📞 [Twilio Call Dispatched] SID: ${data.sid} to ${formattedTo} for Shift ${params.shiftId}`);
+    console.log('Voice accepted by provider');
     return { success: true, sid: data.sid };
 };

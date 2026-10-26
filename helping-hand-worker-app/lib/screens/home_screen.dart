@@ -13,435 +13,166 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-  String _workerName = 'Worker';
-  String _workerCategory = 'GENERAL_LABOR';
-  String _workerSubCategory = 'General Skills';
   String? _workerId;
-
+  String _name = 'Your work';
   final _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
-    _loadWorkerInfo();
+    _loadSession();
   }
 
-  Future<void> _loadWorkerInfo() async {
+  Future<void> _loadSession() async {
     final session = await _apiService.getSession();
     if (!mounted) return;
     setState(() {
       _workerId = session['workerId'];
-      _workerName = session['fullName']?.isNotEmpty == true ? session['fullName']! : 'Worker';
-      _workerCategory = session['category'] ?? 'GENERAL_LABOR';
-      _workerSubCategory = session['subCategory'] ?? 'General Skills';
+      _name = session['fullName']?.isNotEmpty == true
+          ? session['fullName']!
+          : 'Your work';
     });
   }
 
-  Widget _buildHomeTab() {
-    final theme = Theme.of(context);
-    final initials = _workerName.isNotEmpty
-        ? _workerName.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join()
-        : 'W';
-
+  Widget _overview() {
     return Scaffold(
-      backgroundColor: AppColors.primaryDark,
+      appBar: AppBar(
+        title: const Text('Helping Hand'),
+        backgroundColor: AppColors.surfaceOff,
+      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 20,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Welcome, $_workerName',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$_workerCategory • $_workerSubCategory',
-                          style: const TextStyle(
-                            color: AppColors.textDarkSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: AppColors.primaryLight,
-                      child: Text(
-                        initials,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Text(
+              'WORKER',
+              style: TextStyle(
+                fontSize: 12,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accentPurple,
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _name,
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.8,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Your shifts and work profile, without the clutter.',
+              style: TextStyle(
+                fontSize: 16,
+                height: 1.5,
+                color: AppColors.textLightSecondary,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(22),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Find your\ndream job',
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                        fontSize: 34,
-                        fontWeight: FontWeight.bold,
-                        height: 1.1,
+                    const Icon(
+                      Icons.work_outline,
+                      size: 32,
+                      color: AppColors.accentPurple,
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Review your shifts',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryLight.withValues(
-                                alpha: 0.5,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.tune_rounded,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFilterChip('Fulltime', true),
-                          _buildFilterChip(_workerCategory, false),
-                          _buildFilterChip(_workerSubCategory, false),
-                        ],
+                    const SizedBox(height: 10),
+                    const Text(
+                      'See requests from employers, check the daily wage and follow work already in progress.',
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.5,
+                        color: AppColors.textLightSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => setState(() => _currentIndex = 1),
+                        child: const Text('View my shifts'),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 28),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'For You',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 180,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(left: 24, right: 8),
-                  children: [
-                    _buildDreamJobCard(
-                      employerName: 'Suresh Builders',
-                      role: 'Senior $_workerCategory',
-                      wage: '₹950 / Day',
-                      location: 'Kothrud, Pune',
-                      ageText: '2 hours ago',
-                      logoColor: Colors.amber,
-                      logoIcon: Icons.electrical_services,
-                    ),
-                    _buildDreamJobCard(
-                      employerName: 'Tandem Infra',
-                      role: '$_workerSubCategory Assistant',
-                      wage: '₹600 / Day',
-                      location: 'Pimple Saudagar',
-                      ageText: '1 day ago',
-                      logoColor: Colors.blue,
-                      logoIcon: Icons.bolt,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 28),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'New Added',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {},
-                      child: const Text(
-                        'Show All',
-                        style: TextStyle(color: AppColors.textDarkSecondary),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    _buildNewAddedItem(
-                      employerName: 'Bhosari Metro Projects',
-                      role: 'Industrial Cable Layer',
-                      wage: '₹1,100 / Day',
-                      location: 'Bhosari MIDC',
-                      logoIcon: Icons.settings,
-                      logoBgColor: Colors.deepPurple,
-                    ),
-                    _buildNewAddedItem(
-                      employerName: 'Smart Homes Ltd',
-                      role: 'Residential Plumber',
-                      wage: '₹800 / Day',
-                      location: 'Wakad, Pune',
-                      logoIcon: Icons.plumbing,
-                      logoBgColor: Colors.teal,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, bool isSelected) {
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? AppColors.accentPurple
-            : AppColors.primaryMid.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected
-              ? AppColors.accentPurple
-              : AppColors.primaryLight.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? Colors.white : AppColors.textDarkSecondary,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDreamJobCard({
-    required String employerName,
-    required String role,
-    required String wage,
-    required String location,
-    required String ageText,
-    required Color logoColor,
-    required IconData logoIcon,
-  }) {
-    return Container(
-      width: 280,
-      margin: const EdgeInsets.only(right: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: logoColor.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(logoIcon, color: logoColor, size: 24),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceOff,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'Fulltime',
-                  style: TextStyle(
-                    color: AppColors.textLightSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            role,
-            style: const TextStyle(
-              color: AppColors.textLightPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
             ),
-          ),
-          Text(
-            employerName,
-            style: const TextStyle(
-              color: AppColors.textLightSecondary,
-              fontSize: 13,
+            const SizedBox(height: 24),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.person_outline,
+                color: AppColors.accentPurple,
+              ),
+              title: const Text('Work profile and availability'),
+              subtitle: const Text('Manage your skills and when you can work'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => setState(() => _currentIndex = 2),
             ),
-          ),
-          const Spacer(),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                location,
-                style: const TextStyle(
-                  color: AppColors.textLightSecondary,
-                  fontSize: 11,
-                ),
+            const Divider(height: 28),
+            const Text(
+              'Before you accept',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Agree the work, location and pay with your employer. Only mark a payment as received after you have the cash.',
+              style: TextStyle(
+                height: 1.5,
+                color: AppColors.textLightSecondary,
               ),
-              Text(
-                ageText,
-                style: const TextStyle(
-                  color: AppColors.textLightSecondary,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNewAddedItem({
-    required String employerName,
-    required String role,
-    required String wage,
-    required String location,
-    required IconData logoIcon,
-    required Color logoBgColor,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.primaryMid.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.primaryLight.withValues(alpha: 0.2),
+            ),
+          ],
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: logoBgColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(logoIcon, color: logoBgColor, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  role,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                Text(
-                  employerName,
-                  style: const TextStyle(
-                    color: AppColors.textDarkSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  wage,
-                  style: const TextStyle(
-                    color: AppColors.accentPurple,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.arrow_forward_ios_rounded,
-            color: Colors.white30,
-            size: 16,
-          ),
-        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> tabs = [
-      _buildHomeTab(),
-      const ShiftsScreen(),
-      ProfileScreen(workerId: _workerId),
-    ];
-
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: tabs),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        backgroundColor: const Color.fromARGB(255, 255, 255, 255),
-        selectedItemColor: AppColors.accentPurple,
-        unselectedItemColor: const Color.fromARGB(
-          255,
-          62,
-          32,
-          86,
-        ).withValues(alpha: 0.6),
-        showSelectedLabels: true,
-        showUnselectedLabels: false,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.work), label: 'Shifts'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          _overview(),
+          const ShiftsScreen(),
+          ProfileScreen(workerId: _workerId),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.work_outline),
+            selectedIcon: Icon(Icons.work),
+            label: 'My shifts',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
         ],
       ),
     );

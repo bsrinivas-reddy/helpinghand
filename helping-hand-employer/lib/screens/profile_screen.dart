@@ -30,7 +30,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final session = await _apiService.getSession();
       if (!mounted) return;
       setState(() {
-        _employerName = session['fullName']?.isNotEmpty == true ? session['fullName']! : 'Employer User';
+        _employerName = session['fullName']?.isNotEmpty == true
+            ? session['fullName']!
+            : 'Employer User';
         _phoneNumber = session['phoneNumber'] ?? '';
         _email = session['email'];
         _avatarUrl = session['avatarUrl'];
@@ -49,9 +51,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     await _apiService.clearSession();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Logged out successfully')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const EmployerLoginScreen()),
@@ -66,7 +68,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surfaceWhite,
         elevation: 0,
-        title: const Text('Profile & Settings', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Profile & Settings',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -82,44 +90,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         CircleAvatar(
                           radius: 40,
                           backgroundColor: AppColors.primaryLight,
-                          backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty ? NetworkImage(_avatarUrl!) : null,
+                          backgroundImage:
+                              _avatarUrl != null && _avatarUrl!.isNotEmpty
+                              ? NetworkImage(_avatarUrl!)
+                              : null,
                           child: _avatarUrl == null || _avatarUrl!.isEmpty
                               ? Text(
-                                  _employerName.isNotEmpty ? _employerName[0].toUpperCase() : 'E',
-                                  style: const TextStyle(color: AppColors.primary, fontSize: 32, fontWeight: FontWeight.bold),
+                                  _employerName.isNotEmpty
+                                      ? _employerName[0].toUpperCase()
+                                      : 'E',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 )
                               : null,
                         ),
                         const SizedBox(height: 16),
-                        Text(_employerName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                        Text(
+                          _employerName,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                         const SizedBox(height: 4),
-                        Text(_email != null && _email!.isNotEmpty ? '$_phoneNumber • $_email' : _phoneNumber,
-                            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-                        const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildStatColumn('Verified', 'Status'),
-                            Container(width: 1, height: 40, color: AppColors.borderLight),
-                            _buildStatColumn('5.0 ⭐', 'Trust Score'),
-                          ],
+                        Text(
+                          _email != null && _email!.isNotEmpty
+                              ? '$_phoneNumber • $_email'
+                              : _phoneNumber,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
 
-                  _buildSectionHeader('Account & Billing'),
+                  _buildSectionHeader('Account'),
                   _buildListTile(Icons.phone, 'Phone Number', _phoneNumber),
-                  _buildListTile(Icons.account_balance_wallet, 'UPI ID', _upiId ?? 'Not configured'),
-                  _buildListTile(Icons.receipt_long, 'Billing History', 'View past transactions'),
-
-                  const SizedBox(height: 8),
-                  _buildSectionHeader('Preferences'),
-                  _buildListTile(Icons.notifications_none, 'Notifications', 'Enabled'),
-                  _buildListTile(Icons.lock_outline, 'Privacy & Security', ''),
-                  _buildListTile(Icons.help_outline, 'Help & Support', ''),
-
+                  _buildListTile(
+                    Icons.account_balance_wallet,
+                    'UPI ID',
+                    _upiId ?? 'Not configured',
+                  ),
                   const SizedBox(height: 24),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -140,22 +158,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatColumn(String value, String label) {
-    return Column(
-      children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-      ],
-    );
-  }
-
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 1),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppColors.textSecondary,
+          letterSpacing: 1,
+        ),
       ),
     );
   }
@@ -172,17 +185,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           child: Icon(icon, color: AppColors.textPrimary, size: 20),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15, color: AppColors.textPrimary)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (trailingText.isNotEmpty)
-              Text(trailingText, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, color: AppColors.borderLight, size: 20),
-          ],
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 15,
+            color: AppColors.textPrimary,
+          ),
         ),
-        onTap: () {},
+        subtitle: trailingText.isEmpty ? null : Text(trailingText),
       ),
     );
   }

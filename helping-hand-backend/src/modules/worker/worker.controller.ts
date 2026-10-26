@@ -1,10 +1,12 @@
+import {sendPublicError,reportInternal} from '../../utils/publicError.js';
+import { initiateCash, completeCash } from '../../services/cashHandshake.service.js';
+import { transitionWorkerShift, FlowError, transaction } from '../../services/shiftState.service.js';
+import { consumeRegistrationGrant } from '../../utils/registrationGrant.js';
+import { requireActor, requireOwnPath, requireOwnedShift } from '../../utils/ownership.js';
 import { Request, Response } from 'express';
-import crypto from 'crypto';
 import pool from '../../db/db.js';
 import redisClient from '../../db/redisClient.js';
 import { REDIS_WORKERS_GEO_KEY } from '../../utils/constants.js';
-import { calculateHaversineDistance } from '../../utils/haversine.js';
-import { scheduleAutomatedVerificationCall } from '../../services/callScheduler.js';
 import { processIvrKeypress } from '../../services/ivrService.js';
 import { signAccessToken, signRefreshToken } from '../../utils/jwt.js';
 
@@ -17,32 +19,15 @@ export const syncWorkerAvailability = async (workerId: string): Promise<boolean>
             [workerId]
         );
         const hasActiveShift = parseInt(activeShiftsRes.rows[0].count) > 0;
-        const isAvailable = !hasActiveShift;
-
-        const workerRes = await pool.query(
-            `UPDATE workers SET is_available = $1 WHERE worker_id = $2 RETURNING *`,
-            [isAvailable, workerId]
-        );
-
-        if (workerRes.rows.length > 0) {
-            const worker = workerRes.rows[0];
-            if (isAvailable) {
-                const lat = Number(worker.last_known_lat);
-                const lng = Number(worker.last_known_lng);
-                if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-                    await redisClient.geoAdd(REDIS_WORKERS_GEO_KEY, {
-                        longitude: lng,
-                        latitude: lat,
-                        member: workerId
-                    });
-                }
-            } else {
-                await redisClient.zRem(REDIS_WORKERS_GEO_KEY, workerId);
-            }
+        if (!hasActiveShift) {
+            const current = await pool.query('SELECT is_available FROM workers WHERE worker_id = $1', [workerId]);
+            return current.rows[0]?.is_available === true;
         }
-        return isAvailable;
+        await pool.query('UPDATE workers SET is_available = false WHERE worker_id = $1', [workerId]);
+        await redisClient.zRem(REDIS_WORKERS_GEO_KEY, workerId);
+        return false;
     } catch (err) {
-        console.error('Error in syncWorkerAvailability:', err);
+        reportInternal('Error in syncWorkerAvailability:');
         return false;
     }
 };
@@ -60,13 +45,16 @@ export const registerWorker = async (req: Request, res: Response): Promise<void>
         }
 
         const cleanedPhone = phoneNumber.trim();
+        if (!await consumeRegistrationGrant(req.body.registrationGrant, cleanedPhone, 'worker')) {
+            res.status(401).json({success:false, error:'Valid registration grant required'}); return;
+        }
+        const existing = await pool.query('SELECT 1 FROM workers WHERE phone_number = $1', [cleanedPhone]);
+        if (existing.rows.length) { res.status(409).json({success:false, error:'Account already exists; sign in'}); return; }
+
 
         const result = await pool.query(
             `INSERT INTO workers (phone_number, worker_category, worker_sub_category, is_available)
              VALUES ($1, $2, $3, false)
-             ON CONFLICT (phone_number) DO UPDATE 
-             SET worker_category = EXCLUDED.worker_category,
-                 worker_sub_category = EXCLUDED.worker_sub_category
              RETURNING *`,
             [cleanedPhone, workerCategory.trim(), workerSubCategory ? workerSubCategory.trim() : null]
         );
@@ -93,89 +81,35 @@ export const registerWorker = async (req: Request, res: Response): Promise<void>
             user
         });
     } catch (error: any) {
-        console.error('Error in registerWorker:', error);
-        res.status(500).json({ success: false, error: error.message });
+        if (error.code === '23505') { res.status(409).json({success:false, error:'Account already exists; sign in'}); return; }
+        sendPublicError(res,error,'controller');
     }
 };
 
 // 2. Supply Status / Availability (from supplyController.ts)
-export const toggleAvailability = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { workerId, isAvailable, lat, lng } = req.body;
-        if (!workerId || typeof isAvailable !== 'boolean') {
-            res.status(400).json({
-                success: false,
-                error: 'workerId and isAvailable (boolean) are required'
-            });
-            return;
-        }
-
-        let finalAvailability = isAvailable;
-        let forcedOffline = false;
-
-        if (isAvailable) {
-            const activeShiftsRes = await pool.query(
-                `SELECT COUNT(*) FROM shifts 
-                 WHERE worker_id = $1 AND status IN ('ACCEPTED', 'ACTIVE')`,
-                [workerId]
-            );
-            const hasActiveShift = parseInt(activeShiftsRes.rows[0].count) > 0;
-            if (hasActiveShift) {
-                finalAvailability = false;
-                forcedOffline = true;
-            }
-        }
-
-        let query = 'UPDATE workers SET is_available = $1';
-        const params: any[] = [finalAvailability];
-
-        if (lat !== undefined && lng !== undefined) {
-            query += ', last_known_lat = $2, last_known_lng = $3 WHERE worker_id = $4 RETURNING *';
-            params.push(lat, lng, workerId);
-        } else {
-            query += ' WHERE worker_id = $2 RETURNING *';
-            params.push(workerId);
-        }
-
-        const result = await pool.query(query, params);
-
-        if (result.rows.length === 0) {
-            res.status(404).json({ success: false, error: 'Worker not found' });
-            return;
-        }
-
-        const worker = result.rows[0];
-
-        if (finalAvailability) {
-            const currentLat = lat ?? Number(worker.last_known_lat);
-            const currentLng = lng ?? Number(worker.last_known_lng);
-
-            if (currentLat && currentLng && !isNaN(currentLat) && !isNaN(currentLng)) {
-                await redisClient.geoAdd(REDIS_WORKERS_GEO_KEY, {
-                    longitude: Number(currentLng),
-                    latitude: Number(currentLat),
-                    member: workerId
-                });
-            }
-        } else {
-            await redisClient.zRem(REDIS_WORKERS_GEO_KEY, workerId);
-        }
-
-        res.status(200).json({
-            success: true,
-            isAvailable: worker.is_available,
-            message: forcedOffline ? 'Availability forced to offline due to active/accepted shifts' : undefined,
-            worker
+export const toggleAvailability=async(req:Request,res:Response):Promise<void>=>{
+    try{
+        const actor=requireActor(req,res,'worker');if(!actor)return;
+        const {isAvailable,lat,lng}=req.body;
+        if(typeof isAvailable!=='boolean'||(lat!==undefined&&(!Number.isFinite(lat)||lat < -90||lat>90))||(lng!==undefined&&(!Number.isFinite(lng)||lng < -180||lng>180))){res.status(400).json({success:false,error:'Valid availability and coordinates required'});return;}
+        const worker=await transaction(async db=>{
+            const found=await db.query('SELECT * FROM workers WHERE worker_id=$1 FOR UPDATE',[actor]);if(!found.rows.length)throw new FlowError(404,'Worker not found');
+            const busy=await db.query("SELECT shift_id FROM shifts WHERE worker_id=$1 AND status IN ('ACCEPTED','ACTIVE')",[actor]);
+            if(isAvailable&&busy.rows.length)throw new FlowError(409,'Worker has accepted or active work');
+            const result=await db.query('UPDATE workers SET is_available=$1,last_known_lat=COALESCE($2,last_known_lat),last_known_lng=COALESCE($3,last_known_lng) WHERE worker_id=$4 RETURNING *',[isAvailable,lat??null,lng??null,actor]);return result.rows[0];
         });
-    } catch (error: any) {
-        console.error('Error in toggleAvailability:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+        if(!isAvailable)await redisClient.zRem(REDIS_WORKERS_GEO_KEY,actor);
+        else if(worker.last_known_lat!=null&&worker.last_known_lng!=null)await redisClient.geoAdd(REDIS_WORKERS_GEO_KEY,{latitude:Number(worker.last_known_lat),longitude:Number(worker.last_known_lng),member:actor});
+        res.status(200).json({success:true,isAvailable:worker.is_available,worker});
+    }catch(error:any){sendPublicError(res,error,'controller');}
 };
 
 export const updateLocation = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { workerId, lat, lng } = req.body;
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        const workerId = actor;
+        const { lat, lng } = req.body;
         if (!workerId || lat === undefined || lng === undefined) {
             res.status(400).json({
                 success: false,
@@ -187,7 +121,7 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
         const numericLat = Number(lat);
         const numericLng = Number(lng);
 
-        if (isNaN(numericLat) || isNaN(numericLng)) {
+        if (!Number.isFinite(numericLat) || !Number.isFinite(numericLng) || numericLat < -90 || numericLat > 90 || numericLng < -180 || numericLng > 180) {
             res.status(400).json({ success: false, error: 'lat and lng must be valid numbers' });
             return;
         }
@@ -223,16 +157,17 @@ export const updateLocation = async (req: Request, res: Response): Promise<void>
             lng: numericLng
         });
     } catch (error: any) {
-        console.error('Error in updateLocation:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 export const getWorkerStatus = async (req: Request, res: Response): Promise<void> => {
     try {
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        if (!requireOwnPath(res, req.params.workerId, actor)) return;
         const { workerId } = req.params;
         const targetWorkerId = Array.isArray(workerId) ? workerId[0] : workerId;
-        await syncWorkerAvailability(targetWorkerId);
         const result = await pool.query('SELECT * FROM workers WHERE worker_id = $1', [targetWorkerId]);
 
         if (result.rows.length === 0) {
@@ -242,151 +177,42 @@ export const getWorkerStatus = async (req: Request, res: Response): Promise<void
 
         res.status(200).json({ success: true, worker: result.rows[0] });
     } catch (error: any) {
-        console.error('Error in getWorkerStatus:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 // 3. Worker Shift Management (from shiftController.ts)
 export const acceptShift = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { shiftId } = req.params;
-        const result = await pool.query(
-            `UPDATE shifts SET status = 'ACCEPTED' WHERE shift_id = $1 RETURNING *`,
-            [shiftId]
-        );
-
-        if (result.rows.length === 0) {
-            res.status(404).json({ success: false, error: 'Shift not found' });
-            return;
-        }
-
-        const shift = result.rows[0];
-        if (shift.worker_id) {
-            await syncWorkerAvailability(shift.worker_id);
-        }
-
-        res.status(200).json({ success: true, shift });
-    } catch (error: any) {
-        console.error('Error in acceptShift:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+        const actor = requireActor(req, res, 'worker'); if (!actor) return;
+        const shift = await transitionWorkerShift(String(req.params.shiftId), actor, 'ACCEPTED');
+        // Cache removal is repeatable; SQL transaction already marked worker offline.
+        await redisClient.zRem(REDIS_WORKERS_GEO_KEY, actor);
+        res.status(200).json({success:true, shift});
+    } catch (error: any) { sendPublicError(res,error,'controller'); }
 };
 
 export const startShift = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { shiftId } = req.params;
-        const result = await pool.query(
-            `UPDATE shifts 
-             SET status = 'ACTIVE', start_time = CURRENT_TIMESTAMP 
-             WHERE shift_id = $1 
-             RETURNING *`,
-            [shiftId]
-        );
-
-        if (result.rows.length === 0) {
-            res.status(404).json({ success: false, error: 'Shift not found' });
-            return;
-        }
-
-        const shift = result.rows[0];
-        if (shift.worker_id) {
-            await syncWorkerAvailability(shift.worker_id);
-        }
-
-        res.status(200).json({ success: true, shift });
-    } catch (error: any) {
-        console.error('Error in startShift:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+        const actor = requireActor(req, res, 'worker'); if (!actor) return;
+        const shift = await transitionWorkerShift(String(req.params.shiftId), actor, 'ACTIVE');
+        // Cache removal is repeatable; SQL transaction already marked worker offline.
+        await redisClient.zRem(REDIS_WORKERS_GEO_KEY, actor);
+        res.status(200).json({success:true, shift});
+    } catch (error: any) { sendPublicError(res,error,'controller'); }
 };
 
-export const reconcileCash = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { shiftId } = req.params;
-        const targetShiftId = Array.isArray(shiftId) ? shiftId[0] : shiftId;
-        const { workerLat, workerLng, employerLat, employerLng, cashAmount, delayMinutes, isSyncTest } = req.body;
-
-        if (
-            workerLat === undefined || workerLng === undefined ||
-            employerLat === undefined || employerLng === undefined
-        ) {
-            res.status(400).json({
-                success: false,
-                error: 'workerLat, workerLng, employerLat, and employerLng are required'
-            });
-            return;
-        }
-
-        const existingShiftRes = await pool.query('SELECT * FROM shifts WHERE shift_id = $1', [targetShiftId]);
-        if (existingShiftRes.rows.length === 0) {
-            res.status(404).json({ success: false, error: 'Shift not found' });
-            return;
-        }
-
-        const existingShift = existingShiftRes.rows[0];
-        const effectiveCashPaid = cashAmount !== undefined ? Number(cashAmount) : Number(existingShift.adjusted_wage ?? existingShift.agreed_daily_wage);
-
-        const distanceMeters = Math.round(
-            calculateHaversineDistance(
-                Number(workerLat),
-                Number(workerLng),
-                Number(employerLat),
-                Number(employerLng)
-            )
-        );
-
-        const MAX_VERIFICATION_DISTANCE_METERS = 50;
-
-        if (distanceMeters > MAX_VERIFICATION_DISTANCE_METERS) {
-            res.status(400).json({
-                success: false,
-                verified: false,
-                distanceMeters,
-                error: `GPS Proximity Verification Failed. Worker and Employer are ${distanceMeters}m apart (maximum allowed: ${MAX_VERIFICATION_DISTANCE_METERS}m).`
-            });
-            return;
-        }
-
-        const shiftResult = await pool.query(
-            `UPDATE shifts 
-             SET status = 'COMPLETED', actual_cash_paid = $1, end_time = COALESCE(end_time, CURRENT_TIMESTAMP) 
-             WHERE shift_id = $2 
-             RETURNING *`,
-            [effectiveCashPaid, targetShiftId]
-        );
-
-        const completedShift = shiftResult.rows[0];
-
-        if (completedShift.worker_id) {
-            await syncWorkerAvailability(completedShift.worker_id);
-        }
-
-        const callDelay = delayMinutes !== undefined ? Number(delayMinutes) : 5;
-        const callScheduleResult = await scheduleAutomatedVerificationCall(
-            targetShiftId,
-            callDelay,
-            isSyncTest === true
-        );
-
-        res.status(200).json({
-            success: true,
-            verified: true,
-            distanceMeters,
-            message: 'Physical cash payment successfully verified and shift closed. Automated IVR call scheduled.',
-            shift: completedShift,
-            callScheduled: callScheduleResult
-        });
-    } catch (error: any) {
-        console.error('Error in reconcileCash:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+export const reconcileCash=async(req:Request,res:Response):Promise<void>=>{
+    const actor=requireActor(req,res,'worker');if(!actor)return;
+    if(!await requireOwnedShift(res,req.params.shiftId,actor,'worker'))return;
+    res.status(409).json({success:false,error:'handshake_required',message:'Use the two-party cash acknowledgement flow'});
 };
 
 export const handleIvrCallback = async (req: Request, res: Response): Promise<void> => {
     try {
         const { shiftId } = req.params;
-        const callerRole: 'employer' | 'worker' = (req.body.role || 'worker') as 'employer' | 'worker';
+        const callerRole = res.locals.ivrRole;
+        if (callerRole !== 'worker') {res.status(403).json({success:false,error:'Verified callback required'});return;}
         const digit = String(req.body.Digits ?? req.body.dtmfDigit ?? '').trim();
 
         if (!digit || (digit !== '1' && digit !== '2')) {
@@ -417,13 +243,15 @@ export const handleIvrCallback = async (req: Request, res: Response): Promise<vo
 
         res.status(200).json(result);
     } catch (error: any) {
-        console.error('Error in handleIvrCallback:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 export const getShiftById = async (req: Request, res: Response): Promise<void> => {
     try {
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        if (!await requireOwnedShift(res, req.params.shiftId, actor, 'worker')) return;
         const { shiftId } = req.params;
         const result = await pool.query(
             `SELECT s.*, 
@@ -432,8 +260,8 @@ export const getShiftById = async (req: Request, res: Response): Promise<void> =
              FROM shifts s
              JOIN workers w ON s.worker_id = w.worker_id
              JOIN employers e ON s.employer_id = e.employer_id
-             WHERE s.shift_id = $1`,
-            [shiftId]
+             WHERE s.shift_id = $1 AND s.worker_id = $2`,
+            [shiftId, actor]
         );
 
         if (result.rows.length === 0) {
@@ -443,13 +271,15 @@ export const getShiftById = async (req: Request, res: Response): Promise<void> =
 
         res.status(200).json({ success: true, shift: result.rows[0] });
     } catch (error: any) {
-        console.error('Error in getShiftById:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 export const getWorkerShifts = async (req: Request, res: Response): Promise<void> => {
     try {
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        if (!requireOwnPath(res, req.params.userId, actor)) return;
         const { userId } = req.params;
         const result = await pool.query(
             'SELECT * FROM shifts WHERE worker_id = $1 ORDER BY created_at DESC',
@@ -457,18 +287,19 @@ export const getWorkerShifts = async (req: Request, res: Response): Promise<void
         );
         res.status(200).json({ success: true, count: result.rows.length, shifts: result.rows });
     } catch (error: any) {
-        console.error('Error in getWorkerShifts:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 // 4. Ratings / Profile (from ratingController.ts)
 export const getWorkerMyProfile = async (req: Request, res: Response): Promise<void> => {
     try {
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        if (!requireOwnPath(res, req.params.workerId, actor)) return;
         const { workerId } = req.params;
         const targetWorkerId = Array.isArray(workerId) ? workerId[0] : workerId;
 
-        await syncWorkerAvailability(targetWorkerId);
 
         const workerRes = await pool.query(
             `SELECT * FROM workers WHERE worker_id = $1`,
@@ -532,14 +363,20 @@ export const getWorkerMyProfile = async (req: Request, res: Response): Promise<v
             }
         });
     } catch (error: any) {
-        console.error('Error in getWorkerMyProfile:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 export const submitWorkerRating = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { shiftId, reviewerId, revieweeId, reviewerRole, ratingStars, reviewComment } = req.body;
+        const actor = requireActor(req, res, 'worker');
+        if (!actor) return;
+        const { shiftId, ratingStars, reviewComment } = req.body;
+        const owned = await requireOwnedShift(res, shiftId, actor, 'worker');
+        if (!owned) return;
+        const reviewerId = actor;
+        const reviewerRole = 'worker';
+        const revieweeId = owned.employer_id;
 
         if (!shiftId || !reviewerId || !revieweeId || !reviewerRole || ratingStars === undefined) {
             res.status(400).json({
@@ -558,11 +395,13 @@ export const submitWorkerRating = async (req: Request, res: Response): Promise<v
 
         const insertResult = await pool.query(
             `INSERT INTO ratings (shift_id, reviewer_id, reviewee_id, reviewer_role, rating_stars, review_comment)
-             VALUES ($1, $2, $3, $4, $5, $6)
+             SELECT $1, $2, $3, $4, $5, $6 FROM shifts
+             WHERE shift_id = $1 AND worker_id = $2 AND employer_id = $3
              RETURNING *`,
             [shiftId, reviewerId, revieweeId, reviewerRole, stars, reviewComment ? reviewComment.trim() : null]
         );
 
+        if (!insertResult.rows.length) { res.status(404).json({success:false, error:'Shift not found'}); return; }
         const rating = insertResult.rows[0];
 
         // Update Employer Rating
@@ -585,52 +424,12 @@ export const submitWorkerRating = async (req: Request, res: Response): Promise<v
             rating
         });
     } catch (error: any) {
-        console.error('Error in submitWorkerRating:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 // 5. Worker Physical Cash Handshake Initiation
-export const generateCashHandshakeCode = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { shiftId } = req.params;
-        const { lat, lng } = req.body;
-
-        const targetShiftId = Array.isArray(shiftId) ? shiftId[0] : shiftId;
-
-        const shiftRes = await pool.query('SELECT * FROM shifts WHERE shift_id = $1', [targetShiftId]);
-        if (shiftRes.rows.length === 0) {
-            res.status(404).json({ success: false, error: 'Shift not found' });
-            return;
-        }
-
-        const shift = shiftRes.rows[0];
-
-        // Generate 4-digit numeric handshake code
-        const code = crypto.randomInt(1000, 9999).toString();
-
-        const handshakeData = {
-            code,
-            shiftId: targetShiftId,
-            workerId: shift.worker_id,
-            workerLat: Number(lat),
-            workerLng: Number(lng),
-            createdAt: new Date().toISOString()
-        };
-
-        // Store handshake session in Redis (10 minutes validity)
-        await redisClient.set(`shift_handshake:${targetShiftId}`, JSON.stringify(handshakeData), { EX: 600 });
-
-        res.status(200).json({
-            success: true,
-            shiftId: targetShiftId,
-            handshakeCode: code,
-            expiresInSeconds: 600,
-            message: '4-digit handshake code generated. Share this code with the employer upon physical cash payment.'
-        });
-    } catch (error: any) {
-        console.error('Error in generateCashHandshakeCode:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+export const generateCashHandshakeCode=async(req:Request,res:Response):Promise<void>=>{
+    try{const actor=requireActor(req,res,'worker');if(!actor)return;const result=await initiateCash(String(req.params.shiftId),actor,req.body);res.status(200).json(result);}
+    catch(error:any){sendPublicError(res,error,'controller');}
 };
-

@@ -14,7 +14,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _apiService = ApiService();
-  
+
   Map<String, dynamic>? _profileData;
   bool _isLoading = true;
   bool _isToggling = false;
@@ -30,6 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? id = widget.workerId;
     if (id == null) {
       final session = await _apiService.getSession();
+      if (!mounted) return;
       id = session['workerId'];
     }
 
@@ -43,18 +44,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       final res = await _apiService.getWorkerProfile(id);
+      if (!mounted) return;
       if (res['success'] == true) {
         setState(() {
           _profileData = res['workerProfile'];
           _errorMessage = null;
         });
       } else {
-        setState(() => _errorMessage = res['error'] ?? 'Failed to load profile');
+        setState(
+          () => _errorMessage = res['error'] ?? 'Failed to load profile',
+        );
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to fetch profile: ${e.toString()}');
+      if (!mounted) return;
+      setState(
+        () => _errorMessage = 'Failed to fetch profile: ${e.toString()}',
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -71,23 +78,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
     double? lng;
 
     if (targetAvailability) {
-      // Fetch GPS coordinates to publish location
       try {
-        LocationPermission permission = await Geolocator.checkPermission();
+        if (!await Geolocator.isLocationServiceEnabled()) {
+          throw StateError('Turn on location services before going available.');
+        }
+        var permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied) {
           permission = await Geolocator.requestPermission();
         }
-        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
+        if (permission != LocationPermission.always &&
+            permission != LocationPermission.whileInUse) {
+          throw StateError(
+            'Allow location access to appear in nearby worker searches.',
+          );
+        }
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 15),
+          ),
+        );
+        lat = position.latitude;
+        lng = position.longitude;
+      } catch (error) {
+        if (mounted) {
+          if (mounted) setState(() => _isToggling = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error.toString().replaceFirst('Bad state: ', '')),
             ),
           );
-          lat = position.latitude;
-          lng = position.longitude;
         }
-      } catch (e) {
-        debugPrint('Location fetching warning: ${e.toString()}');
+        return;
       }
     }
 
@@ -99,6 +121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         lng: lng,
       );
 
+      if (!mounted) return;
       if (res['success'] == true) {
         setState(() {
           _profileData!['isAvailable'] = res['isAvailable'];
@@ -106,26 +129,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(targetAvailability ? 'You are now AVAILABLE for jobs' : 'You are now OFFLINE'),
-              backgroundColor: targetAvailability ? AppColors.statusGreen : AppColors.statusRed,
+              content: Text(
+                targetAvailability
+                    ? 'You are now AVAILABLE for jobs'
+                    : 'You are now OFFLINE',
+              ),
+              backgroundColor: targetAvailability
+                  ? AppColors.statusGreen
+                  : AppColors.statusRed,
             ),
           );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res['error'] ?? 'Failed to update status'), backgroundColor: AppColors.statusRed),
+            SnackBar(
+              content: Text(res['error'] ?? 'Failed to update status'),
+              backgroundColor: AppColors.statusRed,
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connection error: ${e.toString()}'), backgroundColor: AppColors.statusRed),
+          SnackBar(
+            content: Text('Connection error: ${e.toString()}'),
+            backgroundColor: AppColors.statusRed,
+          ),
         );
       }
     } finally {
-      setState(() => _isToggling = false);
+      if (mounted) setState(() => _isToggling = false);
     }
   }
 
@@ -147,7 +182,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: AppColors.accentPurple)),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.accentPurple),
+        ),
       );
     }
 
@@ -160,9 +197,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(_errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)),
+                Text(
+                  _errorMessage!,
+                  style: const TextStyle(color: Colors.red, fontSize: 16),
+                ),
                 const SizedBox(height: 20),
-                ElevatedButton(onPressed: _loadProfile, child: const Text('Retry')),
+                ElevatedButton(
+                  onPressed: _loadProfile,
+                  child: const Text('Retry'),
+                ),
               ],
             ),
           ),
@@ -203,7 +246,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       else
                         const Padding(
                           padding: EdgeInsets.all(12.0),
-                          child: Icon(Icons.person_outline, color: Colors.white70),
+                          child: Icon(
+                            Icons.person_outline,
+                            color: Colors.white70,
+                          ),
                         ),
                       const Expanded(
                         child: Text(
@@ -217,14 +263,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+                        icon: const Icon(
+                          Icons.logout_rounded,
+                          color: Colors.white70,
+                        ),
                         onPressed: _logout,
-                      )
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // User Avatar with dynamic online/offline dot indicator
                 Center(
                   child: Stack(
@@ -236,7 +285,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: CircleAvatar(
                           radius: 42,
                           backgroundColor: Colors.grey[100],
-                          child: const Icon(Icons.person, size: 48, color: AppColors.primaryDark),
+                          child: const Icon(
+                            Icons.person,
+                            size: 48,
+                            color: AppColors.primaryDark,
+                          ),
                         ),
                       ),
                       Container(
@@ -249,7 +302,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           width: 14,
                           height: 14,
                           decoration: BoxDecoration(
-                            color: isAvailable ? AppColors.statusGreen : Colors.orange,
+                            color: isAvailable
+                                ? AppColors.statusGreen
+                                : Colors.orange,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -258,12 +313,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Real name from profile/session or category fallback
                 Text(
                   data['fullName']?.toString().isNotEmpty == true
                       ? data['fullName'].toString()
-                      : (data['workerCategory'] != null ? '${data['workerCategory']} Professional' : 'Verified Worker'),
+                      : (data['workerCategory'] != null
+                            ? '${data['workerCategory']} Professional'
+                            : 'Worker'),
                   style: theme.textTheme.headlineMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -279,20 +336,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                // Availability Pill Badge (Read-only, managed automatically)
+
+                // Availability
                 GestureDetector(
                   onTap: _toggleAvailability,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: isAvailable 
-                          ? AppColors.statusGreen.withValues(alpha: 0.15) 
+                      color: isAvailable
+                          ? AppColors.statusGreen.withValues(alpha: 0.15)
                           : Colors.orange.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isAvailable 
-                            ? AppColors.statusGreen.withValues(alpha: 0.35) 
+                        color: isAvailable
+                            ? AppColors.statusGreen.withValues(alpha: 0.35)
                             : Colors.orange.withValues(alpha: 0.35),
                         width: 1.2,
                       ),
@@ -304,15 +364,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: isAvailable ? AppColors.statusGreen : Colors.orange,
+                            color: isAvailable
+                                ? AppColors.statusGreen
+                                : Colors.orange,
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          isAvailable ? 'AVAILABLE FOR SHIFTS' : 'OCCUPIED / BUSY',
+                          isAvailable ? 'AVAILABLE FOR SHIFTS' : 'OFFLINE',
                           style: TextStyle(
-                            color: isAvailable ? Colors.white : Colors.orangeAccent[100],
+                            color: isAvailable
+                                ? Colors.white
+                                : Colors.orangeAccent[100],
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 0.8,
@@ -323,31 +387,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Translucent glassmorphic Stats Card
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      width: 1,
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _buildStatCol(data['totalCompletedShifts']?.toString() ?? '0', 'Completed'),
+                      _buildStatCol(
+                        data['totalCompletedShifts']?.toString() ?? '0',
+                        'Completed',
+                      ),
                       _buildStatDivider(),
-                      _buildStatCol(data['totalRatingsCount']?.toString() ?? '0', 'Ratings'),
+                      _buildStatCol(
+                        data['totalRatingsCount']?.toString() ?? '0',
+                        'Ratings',
+                      ),
                       _buildStatDivider(),
-                      _buildStatCol('${data['trustScore'] ?? '5.0'} ⭐', 'Trust Score'),
+                      _buildStatCol(
+                        (data['totalRatingsCount'] as num? ?? 0) > 0 &&
+                                data['trustScore'] != null
+                            ? '${data['trustScore']}'
+                            : 'Not rated',
+                        'Rating score',
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // 2. Scrollable Body Content (Skills, Experience, Reviews)
           Expanded(
             child: SingleChildScrollView(
@@ -358,7 +440,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // Skills Section
                   Text(
                     'Skills',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -366,7 +450,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     runSpacing: 8,
                     children: [
                       _buildSkillChip(data['workerCategory'] ?? 'General'),
-                      if (data['workerSubCategory'] != null && data['workerSubCategory'].toString().isNotEmpty)
+                      if (data['workerSubCategory'] != null &&
+                          data['workerSubCategory'].toString().isNotEmpty)
                         _buildSkillChip(data['workerSubCategory']!),
                     ],
                   ),
@@ -378,11 +463,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Text(
                         'Experience',
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Text(
                         '${shiftsHistory.length} Shifts',
-                        style: const TextStyle(color: AppColors.textLightSecondary, fontSize: 12),
+                        style: const TextStyle(
+                          color: AppColors.textLightSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -390,29 +480,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (shiftsHistory.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text('No completed shifts found yet.', style: TextStyle(color: Colors.black45)),
+                      child: Text(
+                        'No completed shifts found yet.',
+                        style: TextStyle(color: Colors.black45),
+                      ),
                     )
                   else
-                    ...shiftsHistory.take(3).map((s) => _buildExperienceItem(s)),
+                    ...shiftsHistory
+                        .take(3)
+                        .map((s) => _buildExperienceItem(s)),
                   const SizedBox(height: 28),
 
                   // Reviews List Section
                   Text(
                     'Recent Reviews',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (ratingList.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text('No reviews submitted yet.', style: TextStyle(color: Colors.black45)),
+                      child: Text(
+                        'No reviews submitted yet.',
+                        style: TextStyle(color: Colors.black45),
+                      ),
                     )
                   else
                     ...ratingList.take(2).map((r) => _buildReviewItem(r)),
                 ],
               ),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -442,11 +542,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatDivider() {
-    return Container(
-      width: 1,
-      height: 24,
-      color: Colors.white24,
-    );
+    return Container(width: 1, height: 24, color: Colors.white24);
   }
 
   Widget _buildSkillChip(String label) {
@@ -483,7 +579,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.business_center, color: AppColors.accentPurple, size: 20),
+            child: const Icon(
+              Icons.business_center,
+              color: AppColors.accentPurple,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -508,7 +608,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
-          const Icon(Icons.check_circle, color: AppColors.statusGreen, size: 20),
+          const Icon(
+            Icons.check_circle,
+            color: AppColors.statusGreen,
+            size: 20,
+          ),
         ],
       ),
     );
@@ -560,7 +664,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: index < rating ? Colors.amber : Colors.grey.shade300,
                   );
                 }),
-              )
+              ),
             ],
           ),
           const SizedBox(height: 10),

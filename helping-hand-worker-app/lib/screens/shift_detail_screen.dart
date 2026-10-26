@@ -29,6 +29,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
     setState(() => _isLoading = true);
     try {
       final res = await _apiService.getShiftById(widget.shiftId);
+      if (!mounted) return;
       if (res['success'] == true) {
         setState(() {
           _shift = res['shift'];
@@ -40,9 +41,13 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
         );
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load details: ${e.toString()}');
+      if (mounted) {
+        setState(
+          () => _errorMessage = 'Failed to load details: ${e.toString()}',
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -119,72 +124,96 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
   }
 
   Future<void> _reconcileCash() async {
+    final acknowledged = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Have you received the cash?'),
+        content: Text(
+          'Confirm you received ₹${_shift!['adjusted_wage'] ?? _shift!['agreed_daily_wage']} in cash. Only continue after this cash is in your hands. Your code lets the employer confirm the handover. Location access is needed on both devices; it is not proof of payment by itself.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Not yet'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('I have received the cash'),
+          ),
+        ],
+      ),
+    );
+    if (acknowledged != true || !mounted) return;
     setState(() => _isActionLoading = true);
-
-    double workerLat = 18.5204;
-    double workerLng = 73.8567;
-
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw StateError('Turn on location services to create a payment code.');
+      }
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.always ||
-          permission == LocationPermission.whileInUse) {
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
-        );
-        workerLat = position.latitude;
-        workerLng = position.longitude;
-      }
-    } catch (e) {
-      debugPrint('Location fetching failed: ${e.toString()}');
-    }
-
-    final employerLat = workerLat;
-    final employerLng = workerLng;
-    final agreedWage = _shift!['adjusted_wage'] ?? _shift!['agreed_daily_wage'];
-
-    try {
-      final res = await _apiService.reconcileCash(
-        shiftId: widget.shiftId,
-        workerLat: workerLat,
-        workerLng: workerLng,
-        employerLat: employerLat,
-        employerLng: employerLng,
-        cashAmount: double.parse(agreedWage.toString()),
-      );
-
-      if (!mounted) return;
-
-      if (res['success'] == true) {
-        setState(() => _shift = res['shift']);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              res['message'] ?? 'Physical cash reconciled successfully!',
-            ),
-            backgroundColor: AppColors.statusGreen,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(res['error'] ?? 'Reconciliation verification failed'),
-            backgroundColor: AppColors.statusRed,
-          ),
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        throw StateError(
+          'Location permission is needed. No default location will be used.',
         );
       }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: AppColors.statusRed,
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       );
+      final res = await _apiService.generateCashHandshakeCode(
+        shiftId: widget.shiftId,
+        lat: position.latitude,
+        lng: position.longitude,
+        cashAmount: double.parse(
+          '${_shift!['adjusted_wage'] ?? _shift!['agreed_daily_wage']}',
+        ),
+      );
+      if (!mounted) return;
+      if (res['success'] != true) {
+        throw StateError(res['error'] ?? 'Could not create a payment code.');
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Your cash handover code'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${res['handshakeCode']}',
+                style: const TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 8,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Show this to your employer after receiving the cash. Valid for 10 minutes. The shift is not closed until your employer confirms.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isActionLoading = false);
@@ -455,8 +484,12 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                           const Divider(),
                           const SizedBox(height: 12),
                           _buildDetailRow(
-                            'GPS Verification status',
-                            verificationStatus,
+                            'Payment follow-up status',
+                            verificationStatus == 'UNKNOWN'
+                                ? 'Needs manual review. No automatic redial.'
+                                : verificationStatus == 'FAILED'
+                                ? 'Follow-up failed. Contact support.'
+                                : verificationStatus,
                           ),
                           if (verificationStatus == 'VERIFIED') ...[
                             const SizedBox(height: 8),
@@ -469,7 +502,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                                 ),
                                 SizedBox(width: 8),
                                 Text(
-                                  'Cash payment verified by both parties',
+                                  'Both parties confirmed the payment',
                                   style: TextStyle(
                                     color: AppColors.statusGreen,
                                     fontSize: 12,
@@ -516,17 +549,17 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                   if (status == 'PENDING')
                     ElevatedButton(
                       onPressed: _accept,
-                      child: const Text('ACCEPT SHIFT ASSIGNMENT'),
+                      child: const Text('Accept shift request'),
                     )
                   else if (status == 'ACCEPTED')
                     ElevatedButton(
                       onPressed: _start,
-                      child: const Text('START SHIFT WORK'),
+                      child: const Text('Start shift'),
                     )
                   else if (status == 'ACTIVE')
                     ElevatedButton(
                       onPressed: _reconcileCash,
-                      child: const Text('VERIFY CASH RECONCILIATION'),
+                      child: const Text('I received cash · Get code'),
                     )
                   else if (status == 'COMPLETED')
                     ElevatedButton(

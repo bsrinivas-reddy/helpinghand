@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import { validateIvrCallback } from '../../middlewares/ivr.middleware.js';
 import {
     registerWorker,
     toggleAvailability,
@@ -19,7 +20,7 @@ import { validateBody } from '../../middlewares/validate.middleware.js';
 import {
     registerWorkerSchema,
     reconcileCashSchema,
-    handshakeCodeSchema,
+    handshakeCodeSchema, workerCashSchema,
     submitRatingSchema
 } from '../../utils/validation.schemas.js';
 
@@ -43,7 +44,7 @@ router.post(
     '/shifts/:shiftId/cash-handshake-code',
     authenticateToken,
     requireRole('worker'),
-    validateBody(handshakeCodeSchema),
+    validateBody(workerCashSchema),
     generateCashHandshakeCode
 );
 
@@ -52,12 +53,11 @@ router.post(
     '/shifts/:shiftId/reconcile-cash',
     authenticateToken,
     requireRole('worker'),
-    validateBody(reconcileCashSchema),
     reconcileCash
 );
 
 // IVR Telephony Callback (Webhook)
-router.post('/shifts/:shiftId/ivr-callback', handleIvrCallback);
+router.post('/shifts/:shiftId/ivr-callback', express.urlencoded({extended:false,limit:'16kb'}), validateIvrCallback('worker'), handleIvrCallback);
 
 // Ratings
 router.post(

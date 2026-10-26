@@ -16,6 +16,8 @@ class AppTheme {
         error: AppColors.statusRed,
       ),
       textTheme: const TextTheme(
+        bodySmall: TextStyle(color: Color(0xFF172A22)),
+        bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF172A22)),
         headlineLarge: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.w800,
@@ -38,15 +40,12 @@ class AppTheme {
           color: AppColors.textPrimary,
         ),
         bodyLarge: TextStyle(fontSize: 15, color: AppColors.textPrimary),
-        bodyMedium: TextStyle(fontSize: 14, color: AppColors.textSecondary),
       ),
       cardTheme: CardThemeData(
         color: AppColors.surfaceWhite,
         elevation: 2,
         shadowColor: Colors.black.withValues(alpha: 0.05),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -55,21 +54,30 @@ class AppTheme {
           color: AppColors.textSecondary,
           fontSize: 14,
         ),
-        labelStyle: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 14,
-        ),
+        labelStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.borderLight),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight, width: 1.5),
+          borderSide: const BorderSide(
+            color: AppColors.borderLight,
+            width: 1.5,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          side: const BorderSide(color: Color(0xFFB5C8BE)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -77,6 +85,7 @@ class AppTheme {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           elevation: 0,
+          minimumSize: const Size(48, 52),
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),

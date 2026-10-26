@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
-import 'create_shift_screen.dart';
 import 'login_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
@@ -64,7 +63,8 @@ class _HomeScreenState extends State<HomeScreen> {
             activeCount++;
           }
           if (status == 'COMPLETED') {
-            final double actualPaid = double.tryParse('${shift['actual_cash_paid']}') ??
+            final double actualPaid =
+                double.tryParse('${shift['actual_cash_paid']}') ??
                 double.tryParse('${shift['adjusted_wage']}') ??
                 double.tryParse('${shift['agreed_daily_wage']}') ??
                 0.0;
@@ -81,9 +81,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading dashboard: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading dashboard: $e')));
       }
     } finally {
       if (mounted) {
@@ -95,10 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openCreateShiftWithCategory(String category) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const CreateShiftScreen()),
-    ).then((_) => _loadDashboardData());
+    setState(() => _currentIndex = 2);
   }
 
   Widget _buildDashboardTab() {
@@ -112,13 +109,17 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Good Morning,', style: theme.textTheme.bodyMedium),
+            Text('Your workplace,', style: theme.textTheme.bodyMedium),
             Text(_employerName, style: theme.textTheme.headlineLarge),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.textPrimary, size: 28),
+            icon: const Icon(
+              Icons.refresh,
+              color: AppColors.textPrimary,
+              size: 28,
+            ),
             onPressed: _loadDashboardData,
           ),
           Padding(
@@ -128,10 +129,13 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: AppColors.primaryLight,
               child: Text(
                 _employerName.isNotEmpty ? _employerName[0].toUpperCase() : 'E',
-                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          )
+          ),
         ],
       ),
       body: _isLoading
@@ -141,7 +145,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8.0,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -158,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(width: 16),
                           Expanded(
                             child: _buildStatCard(
-                              'Total Spent',
+                              'Recorded cash paid',
                               '₹${_totalSpent.toStringAsFixed(0)}',
                               Icons.currency_rupee,
                               AppColors.statusGreen,
@@ -170,10 +177,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Book Labor', style: theme.textTheme.titleLarge),
+                          Text(
+                            'Find workers',
+                            style: theme.textTheme.titleLarge,
+                          ),
                           TextButton(
-                            onPressed: () => _openCreateShiftWithCategory('General'),
-                            child: const Text('See All'),
+                            onPressed: () =>
+                                _openCreateShiftWithCategory('General'),
+                            child: const Text('View map'),
                           ),
                         ],
                       ),
@@ -183,51 +194,58 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListView(
                           scrollDirection: Axis.horizontal,
                           children: [
-                            _buildCategoryCard('Construction', Icons.construction, Colors.orange),
-                            _buildCategoryCard('Warehouse', Icons.inventory, Colors.blue),
-                            _buildCategoryCard('Delivery', Icons.local_shipping, Colors.green),
-                            _buildCategoryCard('Cleaning', Icons.cleaning_services, Colors.purple),
+                            _buildCategoryCard(
+                              'Construction',
+                              Icons.construction,
+                              Colors.orange,
+                            ),
+                            _buildCategoryCard(
+                              'Warehouse',
+                              Icons.inventory,
+                              Colors.blue,
+                            ),
+                            _buildCategoryCard(
+                              'Delivery',
+                              Icons.local_shipping,
+                              Colors.green,
+                            ),
+                            _buildCategoryCard(
+                              'Cleaning',
+                              Icons.cleaning_services,
+                              Colors.purple,
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 32),
-                      Text('Needs Attention', style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 16),
                       Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: const BorderSide(color: AppColors.statusRedLight, width: 2),
-                        ),
                         child: Padding(
-                          padding: const EdgeInsets.all(16.0),
+                          padding: const EdgeInsets.all(20),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.warning_amber_rounded, color: AppColors.statusRed),
-                                      const SizedBox(width: 8),
-                                      Text('Coverage Gap', style: theme.textTheme.titleMedium?.copyWith(color: AppColors.statusRed)),
-                                    ],
-                                  ),
-                                  const Text('Today', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                                ],
+                              Text(
+                                'Find help for your next shift',
+                                style: theme.textTheme.titleLarge,
                               ),
-                              const SizedBox(height: 12),
-                              const Text('Need additional daily labor? Tap below to find nearby available workers on map.',
-                                  style: TextStyle(color: AppColors.textPrimary)),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Browse nearby workers and review their profile before agreeing the work and daily wage.',
+                                style: TextStyle(
+                                  height: 1.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
                               const SizedBox(height: 16),
                               SizedBox(
                                 width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () => setState(() => _currentIndex = 2),
-                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.statusRed),
-                                  child: const Text('Find Workers on Map'),
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      setState(() => _currentIndex = 2),
+                                  icon: const Icon(Icons.map_outlined),
+                                  label: const Text('Find nearby workers'),
                                 ),
-                              )
+                              ),
                             ],
                           ),
                         ),
@@ -238,12 +256,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (_recentShifts.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 16.0),
-                          child: Text('No shifts created yet.', style: TextStyle(color: AppColors.textSecondary)),
+                          child: Text(
+                            'No shifts created yet.',
+                            style: TextStyle(color: AppColors.textSecondary),
+                          ),
                         )
                       else
                         ..._recentShifts.map((shift) {
                           final String status = shift['status'] ?? 'PENDING';
-                          final double progress = status == 'COMPLETED' ? 1.0 : (status == 'ACTIVE' ? 0.5 : 0.2);
+                          final double progress = status == 'COMPLETED'
+                              ? 1.0
+                              : (status == 'ACTIVE' ? 0.5 : 0.2);
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12.0),
                             child: _buildShiftRow(
@@ -261,24 +284,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const CreateShiftScreen()),
-          ).then((_) => _loadDashboardData());
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Post Shift'),
+        onPressed: () => setState(() => _currentIndex = 2),
+        icon: const Icon(Icons.person_search_outlined),
+        label: const Text('Find a worker'),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       elevation: 0,
       color: color.withValues(alpha: 0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide.none),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide.none,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -286,9 +312,23 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(height: 12),
-            Text(title, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w800)),
+            Text(
+              value,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ],
         ),
       ),
@@ -319,7 +359,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 8),
                 Text(
                   title,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -332,7 +376,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildShiftRow(String title, String status, double progress, IconData icon) {
+  Widget _buildShiftRow(
+    String title,
+    String status,
+    double progress,
+    IconData icon,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -351,15 +400,30 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(status, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  Text(
+                    status,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
                     value: progress,
                     backgroundColor: AppColors.borderLight,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      progress == 1.0 ? AppColors.statusGreen : AppColors.primary,
+                      progress == 1.0
+                          ? AppColors.statusGreen
+                          : AppColors.primary,
                     ),
                     minHeight: 6,
                     borderRadius: BorderRadius.circular(4),
@@ -409,10 +473,26 @@ class _HomeScreenState extends State<HomeScreen> {
           selectedFontSize: 12,
           unselectedFontSize: 12,
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.work_outline), activeIcon: Icon(Icons.work), label: 'Shifts'),
-            BottomNavigationBarItem(icon: Icon(Icons.map_outlined), activeIcon: Icon(Icons.map), label: 'Map'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profile'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.work_outline),
+              activeIcon: Icon(Icons.work),
+              label: 'Shifts',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_outlined),
+              activeIcon: Icon(Icons.map),
+              label: 'Map',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Profile',
+            ),
           ],
         ),
       ),

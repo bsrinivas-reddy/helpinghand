@@ -1,12 +1,15 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'session_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal();
+  ApiService._internal() : _client = SessionClient(http.Client());
+  ApiService.forTesting(http.Client client) : _client = SessionClient(client);
+  final http.Client _client;
 
   // Dynamic base URL targeting host machine or production via --dart-define=API_BASE_URL=...
   String get baseUrl {
@@ -14,7 +17,7 @@ class ApiService {
     if (configuredUrl.isNotEmpty) {
       return configuredUrl;
     }
-    if (!Platform.isAndroid) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return 'http://localhost:3000/api';
     }
     return 'http://10.0.2.2:3000/api';
@@ -53,8 +56,11 @@ class ApiService {
     if (email != null) await prefs.setString(keyEmail, email);
     if (avatarUrl != null) await prefs.setString(keyAvatarUrl, avatarUrl);
     if (token != null) await prefs.setString(keyToken, token);
-    if (refreshToken != null) await prefs.setString(keyRefreshToken, refreshToken);
+    if (refreshToken != null) {
+      await prefs.setString(keyRefreshToken, refreshToken);
+    }
     await prefs.setBool(keyIsLoggedIn, true);
+    sessionExpired.value = false;
   }
 
   Future<Map<String, String?>> getSession() async {
@@ -84,7 +90,8 @@ class ApiService {
 
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(keyIsLoggedIn) ?? false;
+    return (prefs.getBool(keyIsLoggedIn) ?? false) &&
+        prefs.getString(keyToken)?.isNotEmpty == true;
   }
 
   Future<void> clearSession() async {
@@ -102,19 +109,23 @@ class ApiService {
 
   // 2. Auth APIs
   Future<Map<String, dynamic>> sendOtp(String phoneNumber) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/send-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber}),
+      body: jsonEncode({'phoneNumber': phoneNumber, 'role': 'worker'}),
     );
     return jsonDecode(response.body);
   }
 
   Future<Map<String, dynamic>> verifyOtp(String phoneNumber, String otp) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/verify-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber, 'otp': otp}),
+      body: jsonEncode({
+        'phoneNumber': phoneNumber,
+        'otp': otp,
+        'role': 'worker',
+      }),
     );
     return jsonDecode(response.body);
   }
@@ -123,7 +134,7 @@ class ApiService {
     required String idToken,
     String role = 'worker',
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'idToken': idToken, 'role': role}),
@@ -136,7 +147,7 @@ class ApiService {
     if (refToken == null) {
       return {'success': false, 'error': 'No refresh token available'};
     }
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/refresh-token'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refreshToken': refToken}),
@@ -151,15 +162,17 @@ class ApiService {
 
   Future<Map<String, dynamic>> registerWorker({
     required String phoneNumber,
+    required String registrationGrant,
     required String workerCategory,
     String? workerSubCategory,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/register'),
       headers: headers,
       body: jsonEncode({
         'phoneNumber': phoneNumber,
+        'registrationGrant': registrationGrant,
         'workerCategory': workerCategory,
         'workerSubCategory': workerSubCategory,
       }),
@@ -175,7 +188,7 @@ class ApiService {
     double? lng,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/toggle-availability'),
       headers: headers,
       body: jsonEncode({
@@ -194,7 +207,7 @@ class ApiService {
     required double lng,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/location'),
       headers: headers,
       body: jsonEncode({'workerId': workerId, 'lat': lat, 'lng': lng}),
@@ -204,7 +217,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getWorkerStatus(String workerId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/worker/status/$workerId'),
       headers: headers,
     );
@@ -213,7 +226,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getWorkerProfile(String workerId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/worker/profile/$workerId'),
       headers: headers,
     );
@@ -223,7 +236,7 @@ class ApiService {
   // 4. Shift Management APIs
   Future<Map<String, dynamic>> getWorkerShifts(String workerId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/worker/shifts/user/$workerId'),
       headers: headers,
     );
@@ -232,7 +245,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getShiftById(String shiftId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/worker/shifts/$shiftId'),
       headers: headers,
     );
@@ -241,7 +254,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> acceptShift(String shiftId) async {
     final headers = await _getHeaders();
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse('$baseUrl/worker/shifts/$shiftId/accept'),
       headers: headers,
     );
@@ -250,7 +263,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> startShift(String shiftId) async {
     final headers = await _getHeaders();
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse('$baseUrl/worker/shifts/$shiftId/start'),
       headers: headers,
     );
@@ -262,12 +275,18 @@ class ApiService {
     required String shiftId,
     required double lat,
     required double lng,
+    required double cashAmount,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/shifts/$shiftId/cash-handshake-code'),
       headers: headers,
-      body: jsonEncode({'lat': lat, 'lng': lng}),
+      body: jsonEncode({
+        'lat': lat,
+        'lng': lng,
+        'cashReceived': true,
+        'cashAmount': cashAmount,
+      }),
     );
     return jsonDecode(response.body);
   }
@@ -282,7 +301,7 @@ class ApiService {
     required double cashAmount,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/shifts/$shiftId/reconcile-cash'),
       headers: headers,
       body: jsonEncode({
@@ -291,8 +310,6 @@ class ApiService {
         'employerLat': employerLat,
         'employerLng': employerLng,
         'cashAmount': cashAmount,
-        'delayMinutes': 0,
-        'isSyncTest': true,
       }),
     );
     return jsonDecode(response.body);
@@ -307,7 +324,7 @@ class ApiService {
     String? reviewComment,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/worker/ratings/submit'),
       headers: headers,
       body: jsonEncode({

@@ -96,6 +96,8 @@ class AppTheme {
         onSurface: AppColors.textLightPrimary,
       ),
       textTheme: const TextTheme(
+        bodySmall: TextStyle(color: Color(0xFF172A22)),
+        bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF172A22)),
         headlineLarge: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.bold,
@@ -113,10 +115,6 @@ class AppTheme {
           color: AppColors.textLightPrimary,
         ),
         bodyLarge: TextStyle(fontSize: 15, color: AppColors.textLightPrimary),
-        bodyMedium: TextStyle(
-          fontSize: 13,
-          color: AppColors.textLightSecondary,
-        ),
       ),
       cardTheme: const CardThemeData(
         color: AppColors.surfaceWhite,
@@ -149,11 +147,21 @@ class AppTheme {
           borderSide: const BorderSide(color: AppColors.accentPurple, width: 2),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          side: const BorderSide(color: Color(0xFFB5C8BE)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accentPurple,
           foregroundColor: Colors.white,
           elevation: 0,
+          minimumSize: const Size(48, 52),
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),

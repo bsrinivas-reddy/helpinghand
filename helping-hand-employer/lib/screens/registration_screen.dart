@@ -5,21 +5,25 @@ import 'home_screen.dart';
 
 class EmployerRegistrationScreen extends StatefulWidget {
   final String phoneNumber;
+  final String registrationGrant;
   final String? initialFullName;
   final String? initialEmail;
 
   const EmployerRegistrationScreen({
     super.key,
     required this.phoneNumber,
+    required this.registrationGrant,
     this.initialFullName,
     this.initialEmail,
   });
 
   @override
-  State<EmployerRegistrationScreen> createState() => _EmployerRegistrationScreenState();
+  State<EmployerRegistrationScreen> createState() =>
+      _EmployerRegistrationScreenState();
 }
 
-class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen> {
+class _EmployerRegistrationScreenState
+    extends State<EmployerRegistrationScreen> {
   final ApiService _apiService = ApiService();
   final _formKey = GlobalKey<FormState>();
 
@@ -53,8 +57,11 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
     try {
       final res = await _apiService.registerEmployer(
         phoneNumber: widget.phoneNumber,
+        registrationGrant: widget.registrationGrant,
         fullName: _nameController.text.trim(),
-        upiId: _upiController.text.trim().isEmpty ? null : _upiController.text.trim(),
+        upiId: _upiController.text.trim().isEmpty
+            ? null
+            : _upiController.text.trim(),
       );
 
       if (res['success'] == true) {
@@ -75,7 +82,9 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile created successfully! Welcome to Helping Hand.'),
+            content: Text(
+              'Profile created successfully! Welcome to Helping Hand.',
+            ),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -85,7 +94,10 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
           MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
       } else {
-        setState(() => _errorMessage = res['error'] ?? 'Registration failed. Please try again.');
+        setState(
+          () => _errorMessage =
+              res['error'] ?? 'Registration failed. Please try again.',
+        );
       }
     } catch (e) {
       setState(() => _errorMessage = 'Registration error: $e');
@@ -101,7 +113,11 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
       appBar: AppBar(
         title: const Text(
           'Complete Employer Profile',
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 18),
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
         ),
         backgroundColor: AppColors.surfaceWhite,
         elevation: 0,
@@ -122,7 +138,9 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                   decoration: BoxDecoration(
                     color: AppColors.primaryLight.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -132,7 +150,11 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -141,11 +163,19 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                           children: [
                             const Text(
                               'Verified Mobile Number',
-                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                             Text(
                               '+91 ${widget.phoneNumber}',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ],
                         ),
@@ -162,14 +192,26 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                     decoration: BoxDecoration(
                       color: AppColors.statusRedLight,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.statusRed.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: AppColors.statusRed.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: AppColors.statusRed, size: 20),
+                        const Icon(
+                          Icons.error_outline,
+                          color: AppColors.statusRed,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(_errorMessage!, style: const TextStyle(color: AppColors.statusRed, fontSize: 13)),
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: AppColors.statusRed,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -195,15 +237,24 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                     children: [
                       const Text(
                         'Full Name / Company Name *',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _nameController,
                         decoration: InputDecoration(
                           hintText: 'e.g., Rajesh Sharma or Apex Builders',
-                          prefixIcon: const Icon(Icons.person_outline, color: AppColors.primary),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          prefixIcon: const Icon(
+                            Icons.person_outline,
+                            color: AppColors.primary,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
@@ -216,20 +267,32 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
 
                       const Text(
                         'UPI ID for Cash Reconciliation (Optional)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
                         'Used to record physical payouts & digital backup settlements',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _upiController,
                         decoration: InputDecoration(
                           hintText: 'e.g., rajesh@okaxis or builder@upi',
-                          prefixIcon: const Icon(Icons.account_balance_wallet_outlined, color: AppColors.primary),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          prefixIcon: const Icon(
+                            Icons.account_balance_wallet_outlined,
+                            color: AppColors.primary,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ],
@@ -243,16 +306,27 @@ class _EmployerRegistrationScreenState extends State<EmployerRegistrationScreen>
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     elevation: 0,
                   ),
                   child: _isLoading
                       ? const SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
                         )
-                      : const Text('Complete & Start Hiring', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      : const Text(
+                          'Complete & Start Hiring',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ],
             ),

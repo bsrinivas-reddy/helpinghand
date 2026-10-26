@@ -12,32 +12,14 @@ declare global {
 
 /**
  * Authenticate JWT Bearer token from Authorization header.
- * Supports backward-compatibility in non-production environments during transition.
+ * Requires a verified session in every environment.
  */
 export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
     if (!token) {
-        // Enforce strict authentication in production
-        if (process.env.NODE_ENV === 'production') {
-            res.status(401).json({
-                success: false,
-                error: 'Authentication required: Missing Authorization header with Bearer token'
-            });
-            return;
-        }
-
-        // In development/test mode: allow legacy client transition
-        // Extract workerId/employerId from params/body if available as a soft session fallback
-        const devUserId = (req.params.workerId || req.params.employerId || req.params.userId || req.body.workerId || req.body.employerId || req.headers['x-user-id']) as string | undefined;
-        if (devUserId) {
-            req.user = {
-                userId: devUserId,
-                role: req.baseUrl.includes('worker') ? 'worker' : 'employer'
-            };
-        }
-        next();
+        res.status(401).json({ success: false, error: 'Authentication required' });
         return;
     }
 
@@ -48,8 +30,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     } catch (err: any) {
         res.status(401).json({
             success: false,
-            error: 'Invalid or expired access token',
-            message: err.message
+            error: 'Invalid or expired access token'
         });
     }
 };
@@ -61,10 +42,6 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 export const requireRole = (...allowedRoles: ('employer' | 'worker')[]) => {
     return (req: Request, res: Response, next: NextFunction): void => {
         if (!req.user) {
-            // In dev transition mode, if no user is set, allow
-            if (process.env.NODE_ENV !== 'production') {
-                return next();
-            }
             res.status(401).json({ success: false, error: 'Authentication required' });
             return;
         }

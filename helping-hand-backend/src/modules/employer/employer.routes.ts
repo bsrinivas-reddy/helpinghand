@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import { validateIvrCallback } from '../../middlewares/ivr.middleware.js';
 import {
     registerEmployer,
     findNearbyWorkers,
@@ -18,7 +19,7 @@ import {
     registerEmployerSchema,
     createShiftSchema,
     reconcileCashSchema,
-    confirmHandshakeSchema,
+    confirmHandshakeSchema, employerCashSchema, adjustTimingSchema,
     submitRatingSchema
 } from '../../utils/validation.schemas.js';
 
@@ -33,14 +34,14 @@ router.get('/workers/:workerId/summary', authenticateToken, requireRole('employe
 router.post('/shifts/create', authenticateToken, requireRole('employer'), validateBody(createShiftSchema), createShift);
 router.get('/shifts/user/:userId', authenticateToken, requireRole('employer'), getEmployerShifts);
 router.get('/shifts/:shiftId', authenticateToken, requireRole('employer'), getShiftById);
-router.patch('/shifts/:shiftId/adjust-timing', authenticateToken, requireRole('employer'), adjustShiftTiming);
+router.patch('/shifts/:shiftId/adjust-timing', authenticateToken, requireRole('employer'), validateBody(adjustTimingSchema), adjustShiftTiming);
 
 // Cash Handshake Confirmation (Employer verifies code + GPS)
 router.post(
     '/shifts/:shiftId/confirm-cash-handshake',
     authenticateToken,
     requireRole('employer'),
-    validateBody(confirmHandshakeSchema),
+    validateBody(employerCashSchema),
     confirmCashHandshake
 );
 
@@ -49,12 +50,11 @@ router.post(
     '/shifts/:shiftId/reconcile-cash',
     authenticateToken,
     requireRole('employer'),
-    validateBody(reconcileCashSchema),
     reconcileCash
 );
 
 // IVR Telephony Callback (Webhook)
-router.post('/shifts/:shiftId/ivr-callback', handleIvrCallback);
+router.post('/shifts/:shiftId/ivr-callback', express.urlencoded({extended:false,limit:'16kb'}), validateIvrCallback('employer'), handleIvrCallback);
 
 // Ratings
 router.post(

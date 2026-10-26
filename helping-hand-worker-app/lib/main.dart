@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/session_client.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/api_service.dart';
@@ -14,13 +15,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Helping Hand Worker',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light, // Default to light theme which has our custom purple elements
-      home: const AuthSessionWrapper(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: sessionExpired,
+      builder: (context, expired, child) => MaterialApp(
+        title: 'Helping Hand Worker',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode
+            .light, // Default to light theme which has our custom purple elements
+        home: AuthSessionWrapper(key: ValueKey(expired)),
+      ),
     );
   }
 }

@@ -1,19 +1,22 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'session_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal();
+  ApiService._internal() : _client = SessionClient(http.Client());
+  ApiService.forTesting(http.Client client) : _client = SessionClient(client);
+  final http.Client _client;
 
   String get baseUrl {
     const configuredUrl = String.fromEnvironment('API_BASE_URL');
     if (configuredUrl.isNotEmpty) {
       return configuredUrl;
     }
-    if (!Platform.isAndroid) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return 'http://localhost:3000/api';
     }
     return 'http://10.0.2.2:3000/api';
@@ -49,8 +52,11 @@ class ApiService {
     if (avatarUrl != null) await prefs.setString(keyAvatarUrl, avatarUrl);
     if (upiId != null) await prefs.setString(keyUpiId, upiId);
     if (token != null) await prefs.setString(keyToken, token);
-    if (refreshToken != null) await prefs.setString(keyRefreshToken, refreshToken);
+    if (refreshToken != null) {
+      await prefs.setString(keyRefreshToken, refreshToken);
+    }
     await prefs.setBool(keyIsLoggedIn, true);
+    sessionExpired.value = false;
   }
 
   Future<Map<String, String?>> getSession() async {
@@ -79,7 +85,8 @@ class ApiService {
 
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(keyIsLoggedIn) ?? false;
+    return (prefs.getBool(keyIsLoggedIn) ?? false) &&
+        prefs.getString(keyToken)?.isNotEmpty == true;
   }
 
   Future<void> clearSession() async {
@@ -97,19 +104,23 @@ class ApiService {
 
   // 2. Authentication APIs
   Future<Map<String, dynamic>> sendOtp(String phoneNumber) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/send-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber}),
+      body: jsonEncode({'phoneNumber': phoneNumber, 'role': 'employer'}),
     );
     return jsonDecode(response.body);
   }
 
   Future<Map<String, dynamic>> verifyOtp(String phoneNumber, String otp) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/verify-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber, 'otp': otp}),
+      body: jsonEncode({
+        'phoneNumber': phoneNumber,
+        'otp': otp,
+        'role': 'employer',
+      }),
     );
     return jsonDecode(response.body);
   }
@@ -118,7 +129,7 @@ class ApiService {
     required String idToken,
     String role = 'employer',
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'idToken': idToken, 'role': role}),
@@ -131,7 +142,7 @@ class ApiService {
     if (refToken == null) {
       return {'success': false, 'error': 'No refresh token available'};
     }
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/auth/refresh-token'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refreshToken': refToken}),
@@ -146,15 +157,17 @@ class ApiService {
 
   Future<Map<String, dynamic>> registerEmployer({
     required String phoneNumber,
+    required String registrationGrant,
     required String fullName,
     String? upiId,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/employer/register'),
       headers: headers,
       body: jsonEncode({
         'phoneNumber': phoneNumber,
+        'registrationGrant': registrationGrant,
         'fullName': fullName,
         'upiId': upiId,
       }),
@@ -177,15 +190,17 @@ class ApiService {
     if (category != null && category.isNotEmpty) {
       queryParams['category'] = category;
     }
-    final uri = Uri.parse('$baseUrl/employer/nearby-workers').replace(queryParameters: queryParams);
+    final uri = Uri.parse(
+      '$baseUrl/employer/nearby-workers',
+    ).replace(queryParameters: queryParams);
     final headers = await _getHeaders();
-    final response = await http.get(uri, headers: headers);
+    final response = await _client.get(uri, headers: headers);
     return jsonDecode(response.body);
   }
 
   Future<Map<String, dynamic>> getWorkerMapSummary(String workerId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/employer/workers/$workerId/summary'),
       headers: headers,
     );
@@ -198,7 +213,7 @@ class ApiService {
     required double agreedDailyWage,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/employer/shifts/create'),
       headers: headers,
       body: jsonEncode({
@@ -212,7 +227,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getEmployerShifts(String employerId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/employer/shifts/user/$employerId'),
       headers: headers,
     );
@@ -221,7 +236,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getShiftById(String shiftId) async {
     final headers = await _getHeaders();
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$baseUrl/employer/shifts/$shiftId'),
       headers: headers,
     );
@@ -237,15 +252,15 @@ class ApiService {
     String? reason,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.patch(
+    final response = await _client.patch(
       Uri.parse('$baseUrl/employer/shifts/$shiftId/adjust-timing'),
       headers: headers,
       body: jsonEncode({
-        'startTime': startTime,
-        'endTime': endTime,
-        'workedHours': workedHours,
-        'customWage': customWage,
-        'reason': reason,
+        'startTime': ?startTime,
+        'endTime': ?endTime,
+        'workedHours': ?workedHours,
+        'customWage': ?customWage,
+        'reason': ?reason,
       }),
     );
     return jsonDecode(response.body);
@@ -260,11 +275,12 @@ class ApiService {
     double? cashAmount,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/employer/shifts/$shiftId/confirm-cash-handshake'),
       headers: headers,
       body: jsonEncode({
         'handshakeCode': handshakeCode,
+        'cashPaid': true,
         'employerLat': employerLat,
         'employerLng': employerLng,
         'cashAmount': cashAmount,
@@ -283,7 +299,7 @@ class ApiService {
     double? cashAmount,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/employer/shifts/$shiftId/reconcile-cash'),
       headers: headers,
       body: jsonEncode({
@@ -292,8 +308,6 @@ class ApiService {
         'employerLat': employerLat,
         'employerLng': employerLng,
         'cashAmount': cashAmount,
-        'delayMinutes': 0,
-        'isSyncTest': true,
       }),
     );
     return jsonDecode(response.body);
@@ -307,7 +321,7 @@ class ApiService {
     String? reviewComment,
   }) async {
     final headers = await _getHeaders();
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$baseUrl/employer/ratings/submit'),
       headers: headers,
       body: jsonEncode({

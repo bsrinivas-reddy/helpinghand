@@ -1,102 +1,40 @@
+import {verificationConfig} from '../utils/verificationConfig.js';
 import pool from '../db/db.js';
-import { makeTwilioIvrCall } from './twilioService.js';
-
-export interface IvrDispatchParams {
-    shiftId: string;
-    workerPhone: string;
-    employerPhone: string;
-    agreedWage: number;
-}
-
-export const dispatchIvrCalls = async (params: IvrDispatchParams): Promise<{ success: boolean; message: string }> => {
-    const { shiftId, workerPhone, employerPhone, agreedWage } = params;
-
-    console.log(`\n📞 [IVR Telephony Engine] Initiating automated verification calls for Shift ID: ${shiftId}`);
-    console.log(`   📱 Dialing Worker at ${workerPhone}... Prompt: "Did you receive ₹${agreedWage} cash payment? Press 1 for Yes, 2 for Dispute."`);
-    console.log(`   📱 Dialing Employer at ${employerPhone}... Prompt: "Did you pay ₹${agreedWage} cash to worker? Press 1 for Yes, 2 for Dispute."`);
-
-    await pool.query(
-        `UPDATE shifts 
-         SET verification_call_status = 'DISPATCHED'
-         WHERE shift_id = $1`,
-        [shiftId]
-    );
-
-    // Dispatch real outbound calls via Twilio Voice API
-    try {
-        await Promise.allSettled([
-            makeTwilioIvrCall({
-                to: workerPhone,
-                shiftId,
-                role: 'worker',
-                agreedWage
-            }),
-            makeTwilioIvrCall({
-                to: employerPhone,
-                shiftId,
-                role: 'employer',
-                agreedWage
-            })
-        ]);
-    } catch (err: any) {
-        console.error(`❌ [IVR Dispatch Error] Failed to place Twilio calls for Shift ${shiftId}:`, err.message);
-    }
-
-    return {
-        success: true,
-        message: `Automated IVR call dispatched via Twilio to Worker (${workerPhone}) and Employer (${employerPhone}).`
-    };
+import redis from '../db/redisClient.js';
+import crypto from 'crypto';
+import {makeTwilioIvrCall} from './twilioService.js';
+import {dispatchBindingKey} from '../middlewares/ivr.middleware.js';
+import {FlowError,transaction} from './shiftState.service.js';
+export interface IvrDispatchParams {shiftId:string;workerPhone:string;employerPhone:string;agreedWage:number;}
+const e164=(phone:string):string=>phone.startsWith('+')?phone:phone.length===10?`+91${phone}`:`+${phone}`;
+export const dispatchIvrCalls=async(params:IvrDispatchParams):Promise<{success:boolean;message:string;status:string}>=>{
+    const results=await Promise.allSettled((['worker','employer'] as const).map(async role=>{
+        const nonce=crypto.randomBytes(32).toString('hex');
+        const to=e164(role==='worker'?params.workerPhone:params.employerPhone);
+        await redis.set(dispatchBindingKey(nonce),JSON.stringify({shiftId:params.shiftId,role,to}),{EX:verificationConfig().bindingSeconds});
+        const result=await makeTwilioIvrCall({to,shiftId:params.shiftId,role,agreedWage:params.agreedWage,dispatchNonce:nonce});
+        if(!result.success||result.simulated||!result.sid)throw new Error('No real dispatch evidence');
+        const bound=await redis.eval("local raw=redis.call('GET',KEYS[1]); if not raw then return 0 end; local b=cjson.decode(raw); if b.callSid and b.callSid~=ARGV[1] then return 0 end; b.callSid=ARGV[1]; redis.call('SET',KEYS[1],cjson.encode(b),'KEEPTTL'); return 1",{keys:[dispatchBindingKey(nonce)],arguments:[result.sid]});
+        if(!bound)throw new Error('Dispatch binding missing or inconsistent');
+        return result.sid;
+    }));
+    const count=results.filter(r=>r.status==='fulfilled').length;
+    const status=count===2?'DISPATCHED':count===1?'PARTIAL':'UNKNOWN';
+    // Never reverse a dispute/verification that arrived during provider dispatch.
+    await pool.query("UPDATE shifts SET verification_call_status = $1 WHERE shift_id = $2 AND verification_call_status = 'DISPATCHING'",[status,params.shiftId]);
+    return {success:count===2,status,message:count===2?'Both calls accepted by provider, awaiting responses':'Dispatch incomplete or unknown; manual review required, no automatic retry'};
 };
-
-export const processIvrKeypress = async (
-    shiftId: string,
-    role: 'worker' | 'employer',
-    dtmfDigit: string
-): Promise<{ success: boolean; shiftStatus: string; message: string }> => {
-    const isConfirmed = dtmfDigit === '1';
-
-    const currentShiftRes = await pool.query('SELECT * FROM shifts WHERE shift_id = $1', [shiftId]);
-    if (currentShiftRes.rows.length === 0) {
-        throw new Error(`Shift not found for ID: ${shiftId}`);
-    }
-
-    const shift = currentShiftRes.rows[0];
-
-    let workerConfirmed = shift.worker_call_confirmed || false;
-    let employerConfirmed = shift.employer_call_confirmed || false;
-
-    if (role === 'worker') {
-        workerConfirmed = isConfirmed;
-    } else if (role === 'employer') {
-        employerConfirmed = isConfirmed;
-    }
-
-    let newVerificationStatus = shift.verification_call_status;
-
-    if (!isConfirmed) {
-        newVerificationStatus = 'DISPUTED';
-        console.log(`⚠️ [IVR Callback] Shift ${shiftId} marked DISPUTED by ${role} (pressed DTMF ${dtmfDigit})`);
-    } else if (workerConfirmed && employerConfirmed) {
-        newVerificationStatus = 'VERIFIED';
-        console.log(`✅ [IVR Callback] Shift ${shiftId} FULLY VERIFIED by both Worker & Employer!`);
-    } else {
-        newVerificationStatus = 'DISPATCHED';
-        console.log(`ℹ️ [IVR Callback] Shift ${shiftId} confirmed by ${role}. Waiting for other party.`);
-    }
-
-    await pool.query(
-        `UPDATE shifts 
-         SET worker_call_confirmed = $1, 
-             employer_call_confirmed = $2, 
-             verification_call_status = $3
-         WHERE shift_id = $4 
-         RETURNING *`,
-        [workerConfirmed, employerConfirmed, newVerificationStatus, shiftId]
-    );
-
-    return {
-        success: true,
-        shiftStatus: newVerificationStatus,
-        message: `IVR Keypress ${dtmfDigit} processed for ${role}. Current call verification status: ${newVerificationStatus}`
-    };
-};
+export const processIvrKeypress=async(shiftId:string,role:'worker'|'employer',digit:string):Promise<{success:boolean;shiftStatus:string;message:string}>=>transaction(async db=>{
+    if(!['worker','employer'].includes(role)||!['1','2'].includes(digit))throw new FlowError(400,'Invalid callback response');
+    const found=await db.query('SELECT * FROM shifts WHERE shift_id = $1 FOR UPDATE',[shiftId]);const shift=found.rows[0];
+    if(!shift)throw new FlowError(404,'Shift not found');
+    if(shift.status!=='COMPLETED'||!['DISPATCHING','DISPATCHED','PARTIAL','UNKNOWN','VERIFIED','DISPUTED'].includes(shift.verification_call_status))throw new FlowError(409,'Unexpected verification state');
+    const column=role==='worker'?'worker_call_confirmed':'employer_call_confirmed';
+    if(shift.verification_call_status==='DISPUTED')return {success:true,shiftStatus:'DISPUTED',message:'Dispute retained'};
+    if(digit==='1'&&shift[column])return {success:true,shiftStatus:shift.verification_call_status,message:'Response already recorded'};
+    const worker=role==='worker'?digit==='1':shift.worker_call_confirmed===true;
+    const employer=role==='employer'?digit==='1':shift.employer_call_confirmed===true;
+    const status=digit==='2'?'DISPUTED':worker&&employer?'VERIFIED':shift.verification_call_status;
+    await db.query(`UPDATE shifts SET ${column} = $1, verification_call_status = $2 WHERE shift_id = $3`,[digit==='1',status,shiftId]);
+    return {success:true,shiftStatus:status,message:status==='DISPUTED'?'Dispute recorded':'Party response recorded'};
+});

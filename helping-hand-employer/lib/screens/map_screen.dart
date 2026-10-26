@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -16,45 +14,57 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final ApiService _apiService = ApiService();
-  GoogleMapController? _mapController;
   LatLng _userPosition = const LatLng(28.6139, 77.2090);
 
-  Set<Marker> _markers = {};
   List<dynamic> _nearbyWorkers = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
   String _selectedCategory = 'ALL';
 
-  @override
-  void initState() {
-    super.initState();
-    _initLiveLocationAndFetch();
-  }
+  String? _locationError;
+  bool _hasLocation = false;
 
   Future<void> _initLiveLocationAndFetch() async {
+    setState(() {
+      _isLoading = true;
+      _locationError = null;
+    });
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw StateError('Turn on location services to find nearby workers.');
+      }
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 5),
-          ),
-        );
-        _userPosition = LatLng(position.latitude, position.longitude);
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(_userPosition, 13.0),
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        throw StateError(
+          'Location access was not allowed. No default area has been searched.',
         );
       }
-    } catch (_) {
-      // Graceful fallback to default initial position
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      _userPosition = LatLng(position.latitude, position.longitude);
+      _hasLocation = true;
+      await _fetchWorkers();
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () =>
+              _locationError = error.toString().replaceFirst('Bad state: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    await _fetchWorkers();
   }
 
   Future<void> _fetchWorkers() async {
+    if (!_hasLocation) return;
     setState(() {
       _isLoading = true;
     });
@@ -71,32 +81,8 @@ class _MapScreenState extends State<MapScreen> {
 
       if (response['success'] == true) {
         final List<dynamic> workers = response['workers'] ?? [];
-        final Set<Marker> newMarkers = {};
-
-        for (final worker in workers) {
-          final String workerId = worker['workerId'];
-          final double lat = (worker['lat'] as num).toDouble();
-          final double lng = (worker['lng'] as num).toDouble();
-          final String cat = worker['workerCategory'] ?? 'Worker';
-          final num trust = worker['trustScore'] ?? 5.0;
-
-          newMarkers.add(
-            Marker(
-              markerId: MarkerId(workerId),
-              position: LatLng(lat, lng),
-              infoWindow: InfoWindow(
-                title: '$cat ⭐ ${trust.toStringAsFixed(1)}',
-                snippet: 'Tap to view details & book',
-                onTap: () => _showWorkerDetailsBottomSheet(workerId),
-              ),
-              onTap: () => _showWorkerDetailsBottomSheet(workerId),
-            ),
-          );
-        }
-
         setState(() {
           _nearbyWorkers = workers;
-          _markers = newMarkers;
         });
       }
     } catch (e) {
@@ -125,76 +111,100 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isSupportedPlatform = kIsWeb || Platform.isAndroid || Platform.isIOS;
-
     return Scaffold(
-      backgroundColor: AppColors.surfaceOffWhite,
       appBar: AppBar(
+        title: const Text('Find workers'),
         backgroundColor: AppColors.surfaceOffWhite,
-        elevation: 0,
-        title: Text(
-          'Workforce Map',
-          style: Theme.of(context).textTheme.headlineLarge,
-        ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.filter_list, color: AppColors.textPrimary),
-            onSelected: (val) {
-              setState(() {
-                _selectedCategory = val;
-              });
+            tooltip: 'Filter skills',
+            onSelected: (value) {
+              setState(() => _selectedCategory = value);
               _fetchWorkers();
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(value: 'ALL', child: Text('All Categories')),
+              PopupMenuItem(value: 'ALL', child: Text('All skills')),
               PopupMenuItem(value: 'MASON', child: Text('Masonry')),
-              PopupMenuItem(value: 'LABOR', child: Text('General Labor')),
+              PopupMenuItem(value: 'LABOURER', child: Text('General labour')),
               PopupMenuItem(value: 'CARPENTER', child: Text('Carpentry')),
               PopupMenuItem(value: 'PAINTER', child: Text('Painting')),
             ],
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.textPrimary),
-            onPressed: _fetchWorkers,
-          ),
         ],
       ),
-      body: Stack(
-        children: [
-          isSupportedPlatform
-              ? GoogleMap(
-                  initialCameraPosition: CameraPosition(target: _userPosition, zoom: 12.0),
-                  markers: _markers,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                  compassEnabled: true,
-                  onMapCreated: (ctrl) => _mapController = ctrl,
-                )
-              : _buildFallbackListView(),
-          if (_isLoading)
-            const Positioned(
-              top: 16,
-              left: 16,
-              child: Card(
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+      body: !_hasLocation || _locationError != null
+          ? Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 24),
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: AppColors.primary,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Find help near your worksite',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Use your current location to search available workers within 15 km. Your location is requested only when you choose to search.',
+                    style: TextStyle(
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  if (_locationError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Text(
+                        _locationError!,
+                        style: const TextStyle(color: AppColors.statusRed),
                       ),
-                      SizedBox(width: 8),
-                      Text('Finding nearby workers...', style: TextStyle(fontSize: 12)),
+                    ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _initLiveLocationAndFetch,
+                    icon: const Icon(Icons.my_location),
+                    label: Text(
+                      _isLoading
+                          ? 'Finding location…'
+                          : 'Use my current location',
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text('Available workers within 15 km'),
+                      ),
+                      IconButton(
+                        tooltip: 'Refresh workers',
+                        onPressed: _fetchWorkers,
+                        icon: const Icon(Icons.refresh),
+                      ),
                     ],
                   ),
                 ),
-              ),
+                if (_isLoading) const LinearProgressIndicator(),
+                Expanded(child: _buildFallbackListView()),
+              ],
             ),
-        ],
-      ),
     );
   }
 
@@ -213,18 +223,26 @@ class _MapScreenState extends State<MapScreen> {
       itemBuilder: (context, index) {
         final worker = _nearbyWorkers[index];
         final String workerId = worker['workerId'];
+        final category = worker['workerCategory'] as String? ?? 'Worker';
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: AppColors.primaryLight,
               child: Text(
-                (worker['workerCategory'] as String)[0],
-                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                category.isEmpty ? 'W' : category[0],
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            title: Text(worker['workerCategory'] ?? 'Worker'),
-            subtitle: Text('Distance: ${worker['distanceMeters']}m | Trust: ⭐${worker['trustScore']}'),
+            title: Text(category),
+            subtitle: Text(
+              worker['distanceMeters'] == null
+                  ? 'Available nearby'
+                  : 'Distance: ${worker['distanceMeters']} m',
+            ),
             trailing: ElevatedButton(
               onPressed: () => _showWorkerDetailsBottomSheet(workerId),
               child: const Text('View'),
@@ -248,6 +266,7 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
   final ApiService _apiService = ApiService();
   Map<String, dynamic>? _workerCardData;
   bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -258,7 +277,11 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
   Future<void> _loadSummary() async {
     try {
       final response = await _apiService.getWorkerMapSummary(widget.workerId);
-      if (mounted && response['success'] == true) {
+      if (!mounted) return;
+      if (response['success'] != true || response['mapSummaryCard'] == null) {
+        throw StateError('Could not load this worker. Close and try again.');
+      }
+      if (mounted) {
         setState(() {
           _workerCardData = response['mapSummaryCard'];
           _isLoading = false;
@@ -268,6 +291,7 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _error = 'Could not load this worker. Close and try again.';
         });
       }
     }
@@ -286,6 +310,8 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
               height: 200,
               child: Center(child: CircularProgressIndicator()),
             )
+          : _error != null
+          ? Padding(padding: const EdgeInsets.all(24), child: Text(_error!))
           : Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,7 +332,11 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
                     CircleAvatar(
                       radius: 28,
                       backgroundColor: AppColors.primaryLight,
-                      child: Icon(Icons.person, size: 32, color: AppColors.primary),
+                      child: Icon(
+                        Icons.person,
+                        size: 32,
+                        color: AppColors.primary,
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -314,27 +344,52 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _workerCardData?['workerCategory'] ?? 'Daily Worker',
+                            _workerCardData?['workerCategory'] ??
+                                'Daily Worker',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           if (_workerCardData?['workerSubCategory'] != null)
                             Text(
                               _workerCardData!['workerSubCategory'],
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppColors.textSecondary),
                             ),
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              const Icon(Icons.star, color: Colors.amber, size: 18),
+                              const Icon(
+                                Icons.star,
+                                color: Colors.amber,
+                                size: 18,
+                              ),
                               const SizedBox(width: 4),
                               Text(
-                                '${_workerCardData?['averageRating'] ?? 5.0}',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                (_workerCardData?['totalRatingsCount']
+                                                as num? ??
+                                            0) >
+                                        0
+                                    ? '${_workerCardData?['averageRating'] ?? 'Not rated'}'
+                                    : 'Not rated',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               const SizedBox(width: 12),
-                              const Icon(Icons.verified_user, color: AppColors.statusGreen, size: 18),
+                              const Icon(
+                                Icons.verified_user,
+                                color: AppColors.statusGreen,
+                                size: 18,
+                              ),
                               const SizedBox(width: 4),
-                              const Text('Verified ID', style: TextStyle(color: AppColors.statusGreen, fontSize: 12)),
+                              Text(
+                                _workerCardData?['isVerifiedId'] == true
+                                    ? 'ID status recorded'
+                                    : 'ID not verified',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -346,9 +401,20 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildStatCol('Completed Shifts', '${_workerCardData?['totalCompletedShifts'] ?? 0}'),
-                    _buildStatCol('Trust Score', '${_workerCardData?['trustScore'] ?? 5.0}'),
-                    _buildStatCol('Total Reviews', '${_workerCardData?['totalRatingsCount'] ?? 0}'),
+                    _buildStatCol(
+                      'Completed Shifts',
+                      '${_workerCardData?['totalCompletedShifts'] ?? 0}',
+                    ),
+                    _buildStatCol(
+                      'Trust Score',
+                      (_workerCardData?['totalRatingsCount'] as num? ?? 0) > 0
+                          ? '${_workerCardData?['trustScore'] ?? 'Not rated'}'
+                          : 'Not rated',
+                    ),
+                    _buildStatCol(
+                      'Total Reviews',
+                      '${_workerCardData?['totalRatingsCount'] ?? 0}',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -360,14 +426,16 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => CreateShiftScreen(targetWorkerId: widget.workerId),
+                          builder: (context) => CreateShiftScreen(
+                            targetWorkerId: widget.workerId,
+                          ),
                         ),
                       );
                     },
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: const Text('Book This Worker'),
+                    child: const Text('Request a shift'),
                   ),
                 ),
               ],
@@ -378,9 +446,19 @@ class _WorkerBottomSheetCardState extends State<_WorkerBottomSheetCard> {
   Widget _buildStatCol(String label, String value) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary)),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primary,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
       ],
     );
   }

@@ -1,3 +1,5 @@
+import {sendPublicError,reportInternal} from './utils/publicError.js';
+import {startVerificationRecovery} from './services/callScheduler.js';
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -58,7 +60,7 @@ app.get('/health', async (_req: Request, res: Response) => {
             redis: ping === 'PONG' ? 'connected' : 'error'
         });
     } catch (error: any) {
-        res.status(500).json({ status: 'error', message: error.message });
+        sendPublicError(res,error,'health');
     }
 });
 
@@ -74,20 +76,22 @@ app.use((req: Request, res: Response) => {
 
 // Global Error Handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Unhandled Server Error:', err);
-    res.status(err.status || 500).json({
-        success: false,
-        error: err.message || 'Internal Server Error'
-    });
+    sendPublicError(res,err,'unhandled');
 });
 
+let stopRecovery: (()=>Promise<void>) | undefined;
 const server = app.listen(port, async () => {
     console.log(`🚀 Helping Hand Core API running on http://localhost:${port} in [${process.env.NODE_ENV || 'development'}] mode`);
     await runMigrations();
+    stopRecovery = startVerificationRecovery();
 });
 
 // Graceful Shutdown on SIGTERM / SIGINT
 const shutdown = async (signal: string) => {
+    // Bound teardown even if cache/DB adapters stall. Process exit abandons no
+    // detached worker; any claimed dispatch remains UNKNOWN/manual on recovery.
+    const deadline=setTimeout(()=>process.exit(1),45000);deadline.unref();
+    await stopRecovery?.();
     console.log(`\n🛑 [Shutdown] Received ${signal}. Closing server gracefully...`);
     server.close(async () => {
         try {
@@ -100,7 +104,7 @@ const shutdown = async (signal: string) => {
             console.log('👋 Process exiting cleanly.');
             process.exit(0);
         } catch (err) {
-            console.error('Error during graceful shutdown:', err);
+            reportInternal('shutdown');
             process.exit(1);
         }
     });

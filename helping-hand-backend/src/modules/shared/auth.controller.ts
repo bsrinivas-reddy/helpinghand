@@ -1,15 +1,18 @@
+import {sendPublicError,reportInternal} from '../../utils/publicError.js';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import { issueRegistrationGrant } from '../../utils/registrationGrant.js';
 import pool from '../../db/db.js';
 import redisClient from '../../db/redisClient.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../utils/jwt.js';
-import { verifyGoogleIdToken, getGoogleAuthUrl, exchangeCodeForProfile } from '../../services/googleAuth.service.js';
+import { GoogleUserProfile, verifyGoogleIdToken, getGoogleAuthUrl, exchangeCodeForProfile } from '../../services/googleAuth.service.js';
 import { sendTwilioSms } from '../../services/twilioService.js';
 
 // 1. Send OTP (with Rate Limiting & Crypto Random Generation)
 export const sendOtp = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { phoneNumber } = req.body;
+        const { phoneNumber, role } = req.body;
+        if (role !== 'worker' && role !== 'employer') { res.status(400).json({success:false, error:'role_required'}); return; }
         if (!phoneNumber || typeof phoneNumber !== 'string') {
             res.status(400).json({ success: false, error: 'Valid phone number is required' });
             return;
@@ -41,7 +44,7 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
         const otp = crypto.randomInt(100000, 999999).toString();
 
         // Store OTP in Redis (5 minute validity)
-        await redisClient.set(`otp:${cleanedPhone}`, otp, { EX: 300 });
+        await redisClient.set(`otp:${role}:${cleanedPhone}`, otp, { EX: 300 });
 
         // Set 60s cooldown in Redis
         await redisClient.set(`otp_cooldown:${cleanedPhone}`, '1', { EX: 60 });
@@ -53,7 +56,6 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
         // Reset failed verification count
         await redisClient.del(`otp_failed:${cleanedPhone}`);
 
-        console.log(`📱 [SMS Gateway] OTP generated for ${cleanedPhone}: ${otp}`);
 
         // Dispatch real SMS via Twilio SMS Gateway
         await sendTwilioSms({
@@ -64,7 +66,8 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
         const responsePayload: any = {
             success: true,
             message: 'OTP generated and sent successfully',
-            phoneNumber: cleanedPhone
+            phoneNumber: cleanedPhone,
+            role
         };
 
         // Only include plain OTP in response in non-production environments
@@ -74,15 +77,17 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
 
         res.status(200).json(responsePayload);
     } catch (error: any) {
-        console.error('Error in sendOtp:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
 // 2. Verify OTP (with Brute-force Shield & JWT Issuance)
 export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { phoneNumber, otp } = req.body;
+        const { phoneNumber, otp, role } = req.body;
+        if (role !== 'worker' && role !== 'employer') {
+            res.status(400).json({success:false, error:'role_required'}); return;
+        }
         if (!phoneNumber || !otp) {
             res.status(400).json({ success: false, error: 'Phone number and OTP are required' });
             return;
@@ -100,110 +105,48 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const cachedOtp = await redisClient.get(`otp:${cleanedPhone}`);
+        const cachedOtp = await redisClient.get(`otp:${role}:${cleanedPhone}`);
 
-        // Check dev bypass (only in non-production)
-        const isDevBypass = process.env.NODE_ENV !== 'production' && otp === '123456';
-
-        if (!cachedOtp && !isDevBypass) {
+        if (!cachedOtp) {
             res.status(400).json({ success: false, error: 'OTP has expired or was not requested' });
             return;
         }
 
-        if (cachedOtp !== otp && !isDevBypass) {
+        if (cachedOtp !== otp) {
             await redisClient.incr(`otp_failed:${cleanedPhone}`);
             await redisClient.expire(`otp_failed:${cleanedPhone}`, 300);
             res.status(400).json({ success: false, error: 'Invalid OTP code' });
             return;
         }
 
-        // Successfully verified: clear OTP keys
-        await redisClient.del(`otp:${cleanedPhone}`);
+        // Atomically consume only the OTP just checked. Parallel/replayed verification
+        // must not mint a second session or registration grant.
+        const consumed = await redisClient.eval(
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+            { keys: [`otp:${role}:${cleanedPhone}`], arguments: [String(otp)] }
+        );
+        if (!consumed) { res.status(400).json({success:false, error:'OTP expired or already used'}); return; }
         await redisClient.del(`otp_failed:${cleanedPhone}`);
-
-        // Check if user is a Worker
-        const workerRes = await pool.query(
-            'SELECT * FROM workers WHERE phone_number = $1',
-            [cleanedPhone]
-        );
-
-        if (workerRes.rows.length > 0) {
-            const worker = workerRes.rows[0];
-            const token = signAccessToken({
-                userId: worker.worker_id,
-                role: 'worker',
-                phoneNumber: worker.phone_number
-            });
-            const refreshToken = signRefreshToken({
-                userId: worker.worker_id,
-                role: 'worker'
-            });
-
-            res.status(200).json({
-                success: true,
-                isNewUser: false,
-                role: 'worker',
-                user: worker,
-                token,
-                refreshToken
-            });
+        const table = role === 'worker' ? 'workers' : 'employers';
+        const idColumn = role === 'worker' ? 'worker_id' : 'employer_id';
+        const existing = await pool.query(`SELECT * FROM ${table} WHERE phone_number = $1`, [cleanedPhone]);
+        if (existing.rows.length) {
+            const user = existing.rows[0];
+            const payload = {userId:user[idColumn], role, phoneNumber:cleanedPhone};
+            res.status(200).json({success:true, isNewUser:false, role, user,
+                token:signAccessToken(payload), refreshToken:signRefreshToken(payload)});
             return;
         }
-
-        // Check if user is an Employer
-        const employerRes = await pool.query(
-            'SELECT * FROM employers WHERE phone_number = $1',
-            [cleanedPhone]
-        );
-
-        if (employerRes.rows.length > 0) {
-            const employer = employerRes.rows[0];
-            const token = signAccessToken({
-                userId: employer.employer_id,
-                role: 'employer',
-                phoneNumber: employer.phone_number
-            });
-            const refreshToken = signRefreshToken({
-                userId: employer.employer_id,
-                role: 'employer'
-            });
-
-            res.status(200).json({
-                success: true,
-                isNewUser: false,
-                role: 'employer',
-                user: employer,
-                token,
-                refreshToken
-            });
-            return;
-        }
-
-        // New user
-        res.status(200).json({
-            success: true,
-            isNewUser: true,
-            phoneNumber: cleanedPhone,
-            message: 'Phone number verified. User registration required.'
-        });
+        const registrationGrant = await issueRegistrationGrant(cleanedPhone, role);
+        res.status(200).json({success:true, isNewUser:true, role, phoneNumber:cleanedPhone,
+            registrationGrant, expiresInSeconds:300, message:'Phone number verified. User registration required.'});
     } catch (error: any) {
-        console.error('Error in verifyOtp:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendPublicError(res,error,'controller');
     }
 };
 
-// 3. Google OAuth Authentication (Mobile & Web ID Token Verification)
-export const googleAuth = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { idToken, role = 'employer' } = req.body;
-        if (!idToken) {
-            res.status(400).json({ success: false, error: 'Google ID Token is required' });
-            return;
-        }
-
-        const selectedRole = role === 'worker' ? 'worker' : 'employer';
-        const googleProfile = await verifyGoogleIdToken(idToken);
-
+// Both mobile and web call this only with an already verified provider profile.
+const finishGoogleAuth = async (googleProfile: GoogleUserProfile, selectedRole: 'worker'|'employer', res:Response):Promise<void> => {
         const { googleId, email, fullName, avatarUrl } = googleProfile;
 
         if (selectedRole === 'employer') {
@@ -313,43 +256,39 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
             });
             return;
         }
+
+};
+export const googleAuth = async (req:Request,res:Response):Promise<void> => {
+    try {
+        const {idToken,role}=req.body;
+        if(!idToken || (role!=='worker'&&role!=='employer')) {res.status(400).json({success:false,error:'ID token and explicit role required'});return;}
+        await finishGoogleAuth(await verifyGoogleIdToken(idToken),role,res);
     } catch (error: any) {
-        console.error('Error in googleAuth:', error);
-        res.status(401).json({ success: false, error: `Google authentication failed: ${error.message}` });
+        reportInternal('Error in googleAuth:');
+        res.status(401).json({success:false,error:'Google authentication failed'});
     }
 };
 
 // 4. Get Google OAuth Web Consent URL
-export const getGoogleUrl = (req: Request, res: Response): void => {
+export const getGoogleUrl = async(req:Request,res:Response):Promise<void> => {
     try {
-        const { role = 'employer' } = req.query;
-        const url = getGoogleAuthUrl(String(role));
-        res.status(200).json({ success: true, url });
-    } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+        const role=req.query.role;
+        if(role!=='worker'&&role!=='employer'){res.status(400).json({success:false,error:'Explicit role required'});return;}
+        const state=crypto.randomBytes(32).toString('hex');
+        const hash=crypto.createHash('sha256').update(state).digest('hex');
+        await redisClient.set(`oauth_state:${hash}`,role,{EX:300});
+        res.status(200).json({success:true,url:getGoogleAuthUrl(state)});
+    }catch{res.status(503).json({success:false,error:'OAuth unavailable'});}
 };
-
-// 5. Google Web Redirect Callback
-export const handleGoogleWebCallback = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { code, state: role = 'employer' } = req.query;
-        if (!code || typeof code !== 'string') {
-            res.status(400).json({ success: false, error: 'Authorization code is required' });
-            return;
-        }
-
-        const profile = await exchangeCodeForProfile(code);
-        // Delegate to internal helper with verified profile
-        req.body = {
-            idToken: `mock-google-token:${profile.email}:${profile.fullName}:${profile.googleId}`,
-            role
-        };
-        return googleAuth(req, res);
-    } catch (error: any) {
-        console.error('Error in handleGoogleWebCallback:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+export const handleGoogleWebCallback=async(req:Request,res:Response):Promise<void>=>{
+    try{
+        const {code,state}=req.query;
+        if(typeof code!=='string'||typeof state!=='string'||!/^[a-f0-9]{64}$/.test(state)){res.status(400).json({success:false,error:'Valid OAuth code and state required'});return;}
+        const hash=crypto.createHash('sha256').update(state).digest('hex');
+        const role=await redisClient.getDel(`oauth_state:${hash}`);
+        if(role!=='worker'&&role!=='employer'){res.status(400).json({success:false,error:'OAuth state expired or already used'});return;}
+        await finishGoogleAuth(await exchangeCodeForProfile(code),role,res);
+    }catch{res.status(401).json({success:false,error:'Google authentication failed'});}
 };
 
 // 6. Refresh Access Token

@@ -5,8 +5,12 @@ import 'home_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
   final String phoneNumber;
-  final String? verifiedOtp;
-  const RegistrationScreen({super.key, required this.phoneNumber, this.verifiedOtp});
+  final String registrationGrant;
+  const RegistrationScreen({
+    super.key,
+    required this.phoneNumber,
+    required this.registrationGrant,
+  });
 
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
@@ -49,6 +53,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     try {
       final res = await _apiService.registerWorker(
         phoneNumber: widget.phoneNumber,
+        registrationGrant: widget.registrationGrant,
         workerCategory: _selectedCategory!,
         workerSubCategory: _subCategoryController.text.trim().isEmpty
             ? null

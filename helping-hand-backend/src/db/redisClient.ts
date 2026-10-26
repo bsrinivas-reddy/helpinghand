@@ -6,7 +6,7 @@ const client = createClient({
 });
 
 client.on('error', (err) => {
-    console.error('⚠️ [Redis Error]:', err.message);
+    console.error('⚠️ [Redis Error]:');
 });
 
 client.on('connect', () => {
@@ -23,7 +23,7 @@ client.on('reconnecting', () => {
             await client.connect();
         }
     } catch (err: any) {
-        console.error('❌ Failed initial connection to Redis:', err.message);
+        console.error('❌ Failed initial connection to Redis:');
     }
 })();
 

@@ -36,6 +36,7 @@ class _ShiftsScreenState extends State<ShiftsScreen>
     setState(() => _isLoading = true);
     try {
       final session = await _apiService.getSession();
+      if (!mounted) return;
       final workerId = session['workerId'];
 
       if (workerId == null) {
@@ -47,6 +48,7 @@ class _ShiftsScreenState extends State<ShiftsScreen>
       }
 
       final res = await _apiService.getWorkerShifts(workerId);
+      if (!mounted) return;
       if (res['success'] == true) {
         setState(() {
           _shifts = res['shifts'] ?? [];
@@ -56,9 +58,13 @@ class _ShiftsScreenState extends State<ShiftsScreen>
         setState(() => _errorMessage = res['error'] ?? 'Failed to load shifts');
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load shifts: ${e.toString()}');
+      if (mounted) {
+        setState(
+          () => _errorMessage = 'Failed to load shifts: ${e.toString()}',
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
