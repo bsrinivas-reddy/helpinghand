@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:worker_app/services/token_store.dart';
 import 'package:worker_app/main.dart';
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    tokenStore = MemoryTokenStore();
+  });
 
   testWidgets(
     'worker entry explains shifts without synthetic imagery or payout promises',

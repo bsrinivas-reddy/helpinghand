@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:employer_app/services/token_store.dart';
 import 'package:employer_app/main.dart';
 import 'package:employer_app/screens/create_shift_screen.dart';
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    tokenStore = MemoryTokenStore();
+  });
 
   testWidgets(
     'employer entry has a clear role and validates mobile number before sending',

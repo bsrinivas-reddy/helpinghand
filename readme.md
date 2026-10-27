@@ -104,6 +104,13 @@ flutter run
 
 ---
 
+### Release builds
+
+- Backend: set `NODE_ENV=production` (the Dockerfile does), `CORS_ORIGINS` (explicit browser origins, or empty for none) and `TRUST_PROXY` (reverse-proxy hops, 0 if none). Dev shortcuts (mock Google token, OTP in the response, built-in JWT secrets, simulated SMS) work only when `NODE_ENV` is exactly `development` or `test`. Assumption: no deployed environment, staging included, runs with those two values; the code cannot tell a QA server from a laptop.
+- Apps: build with `--dart-define=API_BASE_URL=https://your-api/api`. A release build refuses a missing or non-https URL.
+- Android signing: put your upload keystore details in `android/key.properties` (gitignored: `storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Release builds stop without it and are never signed with the debug key.
+- Cleartext http is enabled for debug builds only.
+
 ## 🛑 Important Development Rules
 
 * **Do not delete `package-lock.json` or `tsconfig.json`:** These guarantee everyone is running the exact same environment and TypeScript compilation rules.

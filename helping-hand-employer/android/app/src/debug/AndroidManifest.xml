@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Cleartext http is for local development only (emulator talks to http://10.0.2.2).
+         The main manifest sets it to false, so release and profile builds refuse plain http. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

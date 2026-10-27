@@ -3,12 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:employer_app/services/token_store.dart';
 import 'package:employer_app/services/api_service.dart';
 import 'package:employer_app/services/session_client.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    tokenStore = MemoryTokenStore();
     sessionExpired.value = false;
   });
   test(

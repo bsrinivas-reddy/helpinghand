@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'session_client.dart';
+import 'token_store.dart';
+import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
@@ -12,16 +14,12 @@ class ApiService {
   final http.Client _client;
 
   // Dynamic base URL targeting host machine or production via --dart-define=API_BASE_URL=...
-  String get baseUrl {
-    const configuredUrl = String.fromEnvironment('API_BASE_URL');
-    if (configuredUrl.isNotEmpty) {
-      return configuredUrl;
-    }
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return 'http://localhost:3000/api';
-    }
-    return 'http://10.0.2.2:3000/api';
-  }
+  String get baseUrl => resolveBaseUrl(
+    configured: const String.fromEnvironment('API_BASE_URL'),
+    isRelease: !kDebugMode,
+    isWeb: kIsWeb,
+    isAndroid: defaultTargetPlatform == TargetPlatform.android,
+  );
 
   // Session keys
   static const String keyWorkerId = 'worker_id';
@@ -47,6 +45,10 @@ class ApiService {
     String? token,
     String? refreshToken,
   }) async {
+    final epoch = authStartEpoch;
+    authStartEpoch = -1;
+    // A logout ran while this login was in flight: drop the stale result.
+    if (epoch != -1 && epoch != sessionEpoch) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyWorkerId, workerId);
     if (phoneNumber != null) await prefs.setString(keyPhoneNumber, phoneNumber);
@@ -55,9 +57,18 @@ class ApiService {
     if (subCategory != null) await prefs.setString(keySubCategory, subCategory);
     if (email != null) await prefs.setString(keyEmail, email);
     if (avatarUrl != null) await prefs.setString(keyAvatarUrl, avatarUrl);
-    if (token != null) await prefs.setString(keyToken, token);
-    if (refreshToken != null) {
-      await prefs.setString(keyRefreshToken, refreshToken);
+    // Tokens first; if a logout dropped a write, stop before marking the user logged in.
+    if (token != null &&
+        !await writeToken(keyToken, token, epoch: epoch == -1 ? null : epoch)) {
+      return;
+    }
+    if (refreshToken != null &&
+        !await writeToken(
+          keyRefreshToken,
+          refreshToken,
+          epoch: epoch == -1 ? null : epoch,
+        )) {
+      return;
     }
     await prefs.setBool(keyIsLoggedIn, true);
     sessionExpired.value = false;
@@ -73,30 +84,34 @@ class ApiService {
       'subCategory': prefs.getString(keySubCategory),
       'email': prefs.getString(keyEmail),
       'avatarUrl': prefs.getString(keyAvatarUrl),
-      'token': prefs.getString(keyToken),
-      'refreshToken': prefs.getString(keyRefreshToken),
+      'token': await readToken(keyToken),
+      'refreshToken': await readToken(keyRefreshToken),
     };
   }
 
   Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(keyToken);
+    return readToken(keyToken);
   }
 
   Future<String?> getRefreshToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(keyRefreshToken);
+    return readToken(keyRefreshToken);
   }
 
   Future<bool> isLoggedIn() async {
+    await migrateLegacyTokens();
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getBool(keyIsLoggedIn) ?? false) &&
-        prefs.getString(keyToken)?.isNotEmpty == true;
+        (await readToken(keyToken))?.isNotEmpty == true;
   }
 
   Future<void> clearSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+    } finally {
+      // After clear(), so the revoke markers deleteTokens may set are not wiped with it.
+      await deleteTokens();
+    }
   }
 
   Future<Map<String, String>> _getHeaders() async {
@@ -118,6 +133,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> verifyOtp(String phoneNumber, String otp) async {
+    beginAuth();
     final response = await _client.post(
       Uri.parse('$baseUrl/auth/verify-otp'),
       headers: {'Content-Type': 'application/json'},
@@ -134,6 +150,7 @@ class ApiService {
     required String idToken,
     String role = 'worker',
   }) async {
+    beginAuth();
     final response = await _client.post(
       Uri.parse('$baseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
@@ -143,6 +160,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> refreshToken() async {
+    final epoch = sessionEpoch;
     final refToken = await getRefreshToken();
     if (refToken == null) {
       return {'success': false, 'error': 'No refresh token available'};
@@ -154,8 +172,8 @@ class ApiService {
     );
     final data = jsonDecode(response.body);
     if (data['success'] == true && data['token'] != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(keyToken, data['token']);
+      // Dropped when a logout ran while the request was in flight.
+      await writeToken(keyToken, data['token'], epoch: epoch);
     }
     return data;
   }
@@ -166,6 +184,7 @@ class ApiService {
     required String workerCategory,
     String? workerSubCategory,
   }) async {
+    beginAuth();
     final headers = await _getHeaders();
     final response = await _client.post(
       Uri.parse('$baseUrl/worker/register'),
