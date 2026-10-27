@@ -4,7 +4,8 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { buildLimiter } from './config/rateLimit.js';
 import pool from './db/db.js';
 import redisClient from './db/redisClient.js';
 
@@ -32,25 +33,23 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
-// Global Rate Limiter: 120 requests per minute per IP
-const globalLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, error: 'Too many requests from this IP, please try again later.' }
-});
-app.use(globalLimiter);
-
-// Strict Rate Limiter for Authentication: 20 requests per 15 minutes per IP
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, error: 'Too many authentication attempts, please try again in 15 minutes.' }
+// Limits live in Redis so they hold across instances and restarts. If Redis fails or stalls,
+// the global limiter counts in process memory (still limited, routes stay up). The auth limiter
+// closes instead: OTP verification already needs Redis, and a per-process brute-force limit
+// would multiply by the number of instances and reset on restart.
+const stateLogger = (name: string) => {
+    let down = false;
+    return (event: 'fallback' | 'recovered') => {
+        if (event === 'fallback' && !down) { down = true; console.warn(`Rate limiter (${name}): shared store unavailable`); }
+        if (event === 'recovered' && down) { down = false; console.warn(`Rate limiter (${name}): shared store recovered`); }
+    };
+};
+const sharedStore = (prefix: string) => new RedisStore({
+    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+    prefix,
 });
 
+// Health probes come from load balancers that share one IP, so they sit before the limiter.
 // Health check endpoint
 app.get('/health', async (_req: Request, res: Response) => {
     try {
@@ -67,6 +66,22 @@ app.get('/health', async (_req: Request, res: Response) => {
         sendPublicError(res,error,'health');
     }
 });
+
+// Global Rate Limiter: 120 requests per minute per IP
+const globalLimiter = buildLimiter({
+    windowMs: 60 * 1000,
+    max: 120,
+    message: { success: false, error: 'Too many requests from this IP, please try again later.' }
+}, sharedStore('rl:global:'), stateLogger('global'));
+app.use(globalLimiter);
+
+// Strict Rate Limiter for Authentication: 20 requests per 15 minutes per IP
+const authLimiter = buildLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    mode: 'reject',
+    message: { success: false, error: 'Too many authentication attempts, please try again in 15 minutes.' }
+}, sharedStore('rl:auth:'), stateLogger('auth'));
 
 // Mount Routes
 app.use('/api/auth', authLimiter, authRoutes);
