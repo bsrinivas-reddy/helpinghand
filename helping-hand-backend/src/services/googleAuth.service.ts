@@ -1,4 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
+import { isDevShortcutEnv } from '../config/runtime.js';
 import 'dotenv/config';
 
 const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -20,7 +21,7 @@ export interface GoogleUserProfile {
  */
 export const verifyGoogleIdToken = async (idToken: string): Promise<GoogleUserProfile> => {
     // 1. Support test/mock tokens in non-production environments
-    if (process.env.NODE_ENV !== 'production' && idToken.startsWith('mock-google-token:')) {
+    if (isDevShortcutEnv() && idToken.startsWith('mock-google-token:')) {
         const parts = idToken.split(':');
         return {
             email: parts[1] || 'mockuser@example.com',

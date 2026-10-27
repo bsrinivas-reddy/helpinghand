@@ -99,6 +99,7 @@ export const runMigrations = async (): Promise<void> => {
         `);
         console.log('✅ [Database Migration] Schema & columns synchronized successfully.');
     } catch (error: any) {
-        console.error('❌ [Database Migration Error]:');
+        console.error('❌ [Database Migration Error]:', error?.message ?? error);
+        throw error;
     }
 };

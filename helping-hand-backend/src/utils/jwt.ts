@@ -1,11 +1,13 @@
 import jwt from 'jsonwebtoken';
 import 'dotenv/config';
+import { isDevShortcutEnv } from '../config/runtime.js';
 
 const ACCESS_FALLBACK = 'helping_hand_dev_jwt_secret_change_me_in_prod';
 const REFRESH_FALLBACK = 'helping_hand_dev_refresh_secret_change_me_in_prod';
 const secret = (kind: 'access' | 'refresh'): string => {
     const configured = process.env[kind === 'access' ? 'JWT_SECRET' : 'JWT_REFRESH_SECRET'];
-    if (process.env.NODE_ENV === 'production') {
+    // Only an explicitly named dev/test environment may fall back to the built-in secrets.
+    if (!isDevShortcutEnv()) {
         const access = process.env.JWT_SECRET?.trim();
         const refresh = process.env.JWT_REFRESH_SECRET?.trim();
         if (!access || !refresh || [ACCESS_FALLBACK, REFRESH_FALLBACK].includes(access) ||

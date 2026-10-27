@@ -351,6 +351,18 @@ test('second-role grant cannot enroll existing other role and never grants an ac
     assert.equal(res.code,401);assert.equal(calls.length,0);assert.equal(res.data.token,undefined);
 });
 
+test('OTP is echoed in the response only in an explicitly named dev/test environment',async()=>{
+    const saved=process.env.NODE_ENV;
+    try{
+        for(const [env,echoed] of [['test',true],['development',true],[undefined,false],['production',false],['staging',false]] as const){
+            if(env===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=env;
+            cache.clear();fixtureSms=async()=>({success:true,simulated:true});
+            const res=response();await auth.sendOtp(req({phoneNumber:'9999999999',role:'worker'}),res);
+            assert.equal(res.code,200,String(env));assert.equal('otp' in res.data,echoed,String(env));
+            if(echoed)assert.equal(res.data.otp,cache.get('otp:worker:9999999999'));
+        }
+    }finally{process.env.NODE_ENV=saved;}
+});
 test('send OTP stores role-specific challenge, phone-wide abuse limits, and calls only fake SMS',async()=>{
     const sent:any[]=[];fixtureSms=async(params)=>{sent.push(params);return {success:true,simulated:true};};
     const res=response();await auth.sendOtp(req({phoneNumber:'9999999999',role:'employer'}),res);

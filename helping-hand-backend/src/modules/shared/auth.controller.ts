@@ -1,4 +1,5 @@
 import {sendPublicError,reportInternal} from '../../utils/publicError.js';
+import { isDevShortcutEnv } from '../../config/runtime.js';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { issueRegistrationGrant } from '../../utils/registrationGrant.js';
@@ -70,8 +71,8 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
             role
         };
 
-        // Only include plain OTP in response in non-production environments
-        if (process.env.NODE_ENV !== 'production') {
+        // Echo the OTP only in an explicitly named dev/test environment
+        if (isDevShortcutEnv()) {
             responsePayload.otp = otp;
         }
 

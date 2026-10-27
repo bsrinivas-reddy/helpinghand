@@ -1,4 +1,5 @@
 import {verificationConfig} from '../utils/verificationConfig.js';
+import { isDevShortcutEnv } from '../config/runtime.js';
 import 'dotenv/config';
 
 export interface TwilioSmsParams {
@@ -34,7 +35,7 @@ export const sendTwilioSms = async (params: TwilioSmsParams): Promise<{ success:
     const formattedTo = formatE164(params.to);
 
     if (!accountSid || !authToken || !fromNumber) {
-        if (process.env.NODE_ENV === 'production') {
+        if (!isDevShortcutEnv()) {
             throw new Error('Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER) must be configured in production');
         }
         console.log('SMS simulation used');
@@ -100,7 +101,7 @@ export const makeTwilioIvrCall = async (params: TwilioCallParams): Promise<{ suc
 </Response>`;
 
     if (!accountSid || !authToken || !fromNumber) {
-        if (process.env.NODE_ENV === 'production') {
+        if (!isDevShortcutEnv()) {
             throw new Error('Twilio Voice credentials must be configured in production environment');
         }
         console.log('Voice simulation used');

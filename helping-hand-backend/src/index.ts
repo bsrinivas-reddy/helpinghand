@@ -12,16 +12,20 @@ import authRoutes from './modules/shared/auth.routes.js';
 import workerRoutes from './modules/worker/worker.routes.js';
 import employerRoutes from './modules/employer/employer.routes.js';
 import { runMigrations } from './db/migrate.js';
+import { corsOrigin, trustProxyHops } from './config/runtime.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Rate limits key on req.ip, so the proxy depth must be explicit (see TRUST_PROXY).
+app.set('trust proxy', trustProxyHops());
 
 // Security HTTP Headers
 app.use(helmet());
 
 // CORS Configuration
 app.use(cors({
-    origin: '*', // Adjust to specific domains in production
+    origin: corsOrigin(), // allowlist from CORS_ORIGINS
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id']
 }));
@@ -41,7 +45,7 @@ app.use(globalLimiter);
 // Strict Rate Limiter for Authentication: 20 requests per 15 minutes per IP
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 30,
+    max: 20,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: 'Too many authentication attempts, please try again in 15 minutes.' }
@@ -55,7 +59,7 @@ app.get('/health', async (_req: Request, res: Response) => {
         res.status(200).json({
             status: 'healthy',
             service: 'Helping Hand Core API',
-            environment: process.env.NODE_ENV || 'development',
+            environment: process.env.NODE_ENV || 'unset',
             timestamp: dbResult.rows[0].now,
             redis: ping === 'PONG' ? 'connected' : 'error'
         });
@@ -80,9 +84,16 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 let stopRecovery: (()=>Promise<void>) | undefined;
-const server = app.listen(port, async () => {
-    console.log(`🚀 Helping Hand Core API running on http://localhost:${port} in [${process.env.NODE_ENV || 'development'}] mode`);
-    await runMigrations();
+// Migrate first, then bind the port. A load balancer must never see an open port on a
+// half-migrated schema, and a failed migration must stop the process before it serves.
+await runMigrations().catch(err => {
+    console.error('Startup aborted: migration failed:', err?.message ?? err);
+    reportInternal('startup-migration');
+    process.exitCode = 1;
+    throw err;
+});
+const server = app.listen(port, () => {
+    console.log(`🚀 Helping Hand Core API running on http://localhost:${port} in [${process.env.NODE_ENV || 'unset'}] mode`);
     stopRecovery = startVerificationRecovery();
 });
 
