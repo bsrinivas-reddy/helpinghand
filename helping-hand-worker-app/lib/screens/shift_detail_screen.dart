@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/friendly_error.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
@@ -42,9 +43,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(
-          () => _errorMessage = 'Failed to load details: ${e.toString()}',
-        );
+        setState(() => _errorMessage = friendlyError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -76,7 +75,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(friendlyError(e)),
           backgroundColor: AppColors.statusRed,
         ),
       );
@@ -112,7 +111,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(friendlyError(e)),
           backgroundColor: AppColors.statusRed,
         ),
       );
@@ -208,11 +207,9 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error.toString().replaceFirst('Bad state: ', '')),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     } finally {
       if (mounted) {
@@ -422,7 +419,9 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                           const SizedBox(height: 8),
                           _buildDetailRow(
                             'Worked Hours',
-                            '${shift['worked_hours'] ?? 8} hours',
+                            shift['worked_hours'] == null
+                                ? 'Not recorded'
+                                : '${shift['worked_hours']} hours',
                           ),
                         ],
                       ),

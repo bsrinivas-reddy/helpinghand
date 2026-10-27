@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/friendly_error.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import 'shift_detail_screen.dart';
@@ -59,9 +60,7 @@ class _ShiftsScreenState extends State<ShiftsScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(
-          () => _errorMessage = 'Failed to load shifts: ${e.toString()}',
-        );
+        setState(() => _errorMessage = friendlyError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

@@ -277,7 +277,17 @@ class _EmployerLoginScreenState extends State<EmployerLoginScreen> {
                             : const Text('Send verification code'),
                       ),
                     ] else ...[
-                      TextField(controller: _otpController, keyboardType: TextInputType.number, autofillHints: const [AutofillHints.oneTimeCode], maxLength: 6, decoration: const InputDecoration(labelText: 'Verification code', hintText: '6-digit code'), onChanged: (_) => setState(() {})),
+                      TextField(
+                        controller: _otpController,
+                        keyboardType: TextInputType.number,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        maxLength: 6,
+                        decoration: const InputDecoration(
+                          labelText: 'Verification code',
+                          hintText: '6-digit code',
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: _isLoading ? null : _handleVerifyOtp,

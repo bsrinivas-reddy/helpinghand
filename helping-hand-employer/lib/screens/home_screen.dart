@@ -15,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  int _shiftsEpoch = 0;
   final ApiService _apiService = ApiService();
 
   String _employerName = 'Employer';
@@ -94,10 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openCreateShiftWithCategory(String category) {
-    setState(() => _currentIndex = 2);
-  }
-
   Widget _buildDashboardTab() {
     final theme = Theme.of(context);
     return Scaffold(
@@ -174,50 +171,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                       const SizedBox(height: 32),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Find workers',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          TextButton(
-                            onPressed: () =>
-                                _openCreateShiftWithCategory('General'),
-                            child: const Text('View map'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 110,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: [
-                            _buildCategoryCard(
-                              'Construction',
-                              Icons.construction,
-                              Colors.orange,
-                            ),
-                            _buildCategoryCard(
-                              'Warehouse',
-                              Icons.inventory,
-                              Colors.blue,
-                            ),
-                            _buildCategoryCard(
-                              'Delivery',
-                              Icons.local_shipping,
-                              Colors.green,
-                            ),
-                            _buildCategoryCard(
-                              'Cleaning',
-                              Icons.cleaning_services,
-                              Colors.purple,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 32),
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(20),
@@ -283,12 +236,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => setState(() => _currentIndex = 2),
-        icon: const Icon(Icons.person_search_outlined),
-        label: const Text('Find a worker'),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -330,47 +277,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryCard(String title, IconData icon, Color color) {
-    return Container(
-      width: 100,
-      margin: const EdgeInsets.only(right: 12),
-      child: Card(
-        child: InkWell(
-          onTap: () => _openCreateShiftWithCategory(title),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: color, size: 28),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -443,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final List<Widget> tabs = [
       _buildDashboardTab(),
-      const ShiftsScreen(),
+      ShiftsScreen(key: ValueKey('shifts-$_shiftsEpoch')),
       const MapScreen(),
       const ProfileScreen(),
     ];
@@ -462,7 +368,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: (index) {
+            final changed = index != _currentIndex;
+            setState(() {
+              _currentIndex = index;
+              // Reload shift data when returning to Home or Shifts so a
+              // request sent from the map shows up.
+              if (changed && index == 1) _shiftsEpoch++;
+            });
+            if (changed && index == 0) _loadDashboardData();
+          },
           backgroundColor: Colors.white,
           selectedItemColor: AppColors.primary,
           unselectedItemColor: AppColors.textSecondary,

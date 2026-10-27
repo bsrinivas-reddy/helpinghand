@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/friendly_error.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
@@ -65,7 +66,7 @@ class _ShiftsScreenState extends State<ShiftsScreen>
         );
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error loading shifts: $e')));
+        ).showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     } finally {
       if (mounted) {
@@ -173,11 +174,9 @@ class _ShiftsScreenState extends State<ShiftsScreen>
       await _loadShifts();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error.toString().replaceFirst('Bad state: ', '')),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -267,6 +266,83 @@ class _ShiftsScreenState extends State<ShiftsScreen>
     );
   }
 
+  static const List<String> _stepStatuses = [
+    'PENDING',
+    'ACCEPTED',
+    'ACTIVE',
+    'COMPLETED',
+  ];
+  static const List<String> _stepLabels = [
+    'Requested',
+    'Accepted',
+    'Working',
+    'Cash recorded',
+  ];
+
+  Widget _buildProgress(String status) {
+    final current = _stepStatuses.indexOf(status);
+    if (current < 0) return const SizedBox.shrink();
+    return Row(
+      children: [
+        for (var i = 0; i < _stepLabels.length; i++)
+          Expanded(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 3,
+                        color: i == 0
+                            ? Colors.transparent
+                            : (i <= current
+                                  ? AppColors.primary
+                                  : AppColors.borderLight),
+                      ),
+                    ),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: i <= current
+                            ? AppColors.primary
+                            : AppColors.borderLight,
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        height: 3,
+                        color: i == _stepLabels.length - 1
+                            ? Colors.transparent
+                            : (i < current
+                                  ? AppColors.primary
+                                  : AppColors.borderLight),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _stepLabels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: i == current
+                        ? FontWeight.w700
+                        : FontWeight.w400,
+                    color: i <= current
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildShiftCard(Map<String, dynamic> shift) {
     final String status = shift['status'] ?? 'PENDING';
     final String wage =
@@ -350,6 +426,8 @@ class _ShiftsScreenState extends State<ShiftsScreen>
                 ),
               ],
             ),
+            const SizedBox(height: 14),
+            _buildProgress(status),
             const SizedBox(height: 16),
             if (status == 'ACTIVE')
               SizedBox(

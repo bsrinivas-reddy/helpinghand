@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Theme main backgrounds
-  static const Color surfaceOffWhite = Color(0xFFF6F8F6);
+  static const Color surfaceOffWhite = Color(0xFFF4F7FB);
   static const Color surfaceWhite = Color(0xFFFFFFFF);
 
-  // Accents (Indigo)
-  static const Color primary = Color(0xFF146B58);
-  static const Color primaryDark = Color(0xFF105344);
-  static const Color primaryLight = Color(0xFFE4F1EC);
+  // Accents (Blue)
+  static const Color primary = Color(0xFF1D4ED8);
+  static const Color primaryDark = Color(0xFF1E3A8A);
+  static const Color primaryLight = Color(0xFFE0EAFF);
 
   // Text Colors
   static const Color textPrimary = Color(0xFF0F172A);

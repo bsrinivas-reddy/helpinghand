@@ -16,8 +16,8 @@ class AppTheme {
         error: AppColors.statusRed,
       ),
       textTheme: const TextTheme(
-        bodySmall: TextStyle(color: Color(0xFF172A22)),
-        bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF172A22)),
+        bodySmall: TextStyle(color: Color(0xFF0F172A)),
+        bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF0F172A)),
         headlineLarge: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.w800,
@@ -40,6 +40,12 @@ class AppTheme {
           color: AppColors.textPrimary,
         ),
         bodyLarge: TextStyle(fontSize: 15, color: AppColors.textPrimary),
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        showCloseIcon: true,
+        // Keeps messages above bottom buttons and the navigation bar.
+        insetPadding: EdgeInsets.fromLTRB(16, 0, 16, 104),
       ),
       cardTheme: CardThemeData(
         color: AppColors.surfaceWhite,
@@ -74,7 +80,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(48, 52),
-          side: const BorderSide(color: Color(0xFFB5C8BE)),
+          side: const BorderSide(color: Color(0xFFBFCDE6)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

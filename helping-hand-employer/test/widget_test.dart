@@ -62,4 +62,33 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('request screen names the trade and accepts only wage digits', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: CreateShiftScreen(
+          targetWorkerId: 'selected-worker',
+          workerCategory: 'PAINTER',
+        ),
+      ),
+    );
+    expect(find.text('Painter selected'), findsOneWidget);
+    for (final typed in [
+      '1',
+      '12',
+      '12a',
+      '123',
+      '123.',
+      '123.4',
+      '123.45',
+      '123.456',
+    ]) {
+      await tester.enterText(find.byType(TextField), typed);
+      await tester.pump();
+    }
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, '123.45');
+  });
 }

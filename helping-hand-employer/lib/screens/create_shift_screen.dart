@@ -1,10 +1,32 @@
 import 'package:flutter/material.dart';
+import '../utils/friendly_error.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 
+String? _categoryLabel(String? raw) {
+  switch (raw) {
+    case 'MASON':
+      return 'Mason';
+    case 'LABOURER':
+      return 'Labourer';
+    case 'CARPENTER':
+      return 'Carpenter';
+    case 'PAINTER':
+      return 'Painter';
+    default:
+      return null;
+  }
+}
+
 class CreateShiftScreen extends StatefulWidget {
   final String? targetWorkerId;
-  const CreateShiftScreen({super.key, this.targetWorkerId});
+  final String? workerCategory;
+  const CreateShiftScreen({
+    super.key,
+    this.targetWorkerId,
+    this.workerCategory,
+  });
 
   @override
   State<CreateShiftScreen> createState() => _CreateShiftScreenState();
@@ -71,7 +93,7 @@ class _CreateShiftScreenState extends State<CreateShiftScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error creating shift: $e')));
+      ).showSnackBar(SnackBar(content: Text(friendlyError(e))));
     } finally {
       if (mounted) {
         setState(() {
@@ -124,7 +146,9 @@ class _CreateShiftScreenState extends State<CreateShiftScreen> {
                         children: [
                           Text(
                             hasWorker
-                                ? 'Worker selected'
+                                ? (_categoryLabel(widget.workerCategory) == null
+                                      ? 'Worker selected'
+                                      : '${_categoryLabel(widget.workerCategory)} selected')
                                 : 'Select a worker first',
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
@@ -154,6 +178,14 @@ class _CreateShiftScreenState extends State<CreateShiftScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
+              inputFormatters: [
+                TextInputFormatter.withFunction(
+                  (oldValue, newValue) =>
+                      RegExp(r'^\d{0,6}(\.\d{0,2})?$').hasMatch(newValue.text)
+                      ? newValue
+                      : oldValue,
+                ),
+              ],
               decoration: const InputDecoration(
                 labelText: 'Agreed daily wage',
                 prefixText: '₹ ',

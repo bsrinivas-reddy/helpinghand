@@ -1,3 +1,4 @@
+import '../utils/phone_format.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
@@ -328,7 +329,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '+91 ${data['phoneNumber'] ?? ''}',
+                  formatIndianPhone('${data['phoneNumber'] ?? ''}'),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 13,
@@ -599,7 +600,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 Text(
-                  'Worked ${shift['workedHours'] ?? 8}h  •  Wage Paid: ₹${shift['wage']}',
+                  '${shift['workedHours'] == null ? 'Hours not recorded' : 'Worked ${shift['workedHours']}h'}  •  Wage Paid: ₹${shift['wage']}',
                   style: const TextStyle(
                     color: AppColors.textLightSecondary,
                     fontSize: 11,
